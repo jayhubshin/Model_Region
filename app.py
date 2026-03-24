@@ -465,12 +465,21 @@ def show_dashboard(df):
         min_date = valid_dates['운영계약시작일_parsed'].min()
         max_date = valid_dates['운영계약종료일_parsed'].max()
         
+        # 🔥 핵심 수정: 안전한 기본값 계산
+        default_start = max(min_date, date(2022, 1, 1))
+        default_end = min(max_date, date(2028, 1, 1))
+        
+        # 추가 안전장치: 논리적 일관성 보장
+        if default_start > default_end:
+            default_start = min_date
+            default_end = max_date
+        
         col1, col2, col3 = st.columns([2, 2, 1])
         
         with col1:
             start_date = st.date_input(
                 "계약 시작일 (이후)",
-                value=date(2022, 1, 1),
+                value=default_start,
                 min_value=min_date,
                 max_value=max_date,
                 help="AR열 기준 - 이 날짜 이후에 시작하는 계약"
@@ -479,7 +488,7 @@ def show_dashboard(df):
         with col2:
             end_date = st.date_input(
                 "계약 종료일 (이전)",
-                value=date(2028, 1, 1),
+                value=default_end,
                 min_value=min_date,
                 max_value=max_date,
                 help="AS열 기준 - 이 날짜 이전에 종료하는 계약"
@@ -690,11 +699,10 @@ def show_dashboard(df):
                 use_container_width=True
             )
         
-        # 🔥 데이터 품질 체크 섹션 추가
+        # 데이터 품질 체크 섹션
         st.markdown("---")
         st.markdown("### 🔍 데이터 품질 체크")
         
-        # ✅ 수정: isin() 사용으로 정규식 오류 방지
         problematic_regions = ['수도권??', '인천??', '기타', '수도권기타']
         unknown_regions = filtered_df[
             filtered_df['권역'].isin(problematic_regions)
@@ -715,7 +723,6 @@ def show_dashboard(df):
             st.warning(f"⚠️ {len(unknown_regions):,}개의 주소가 미분류되었거나 불명확합니다.")
             
             with st.expander("🔍 미분류 주소 상세 보기", expanded=False):
-                # 권역별 통계
                 unknown_stats = unknown_regions['권역'].value_counts()
                 st.markdown("**권역별 미분류 통계:**")
                 st.dataframe(
@@ -741,6 +748,7 @@ def show_dashboard(df):
     
     else:
         st.warning("⚠️ 유효한 운영계약 날짜 데이터가 없습니다. AR열과 AS열을 확인해주세요.")
+
 
 def main():
     # 🔥 핵심: 세션 상태 초기화 시 샘플 데이터 자동 로드
