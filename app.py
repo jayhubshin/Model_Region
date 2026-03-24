@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 import pytz
 import folium
 from streamlit_folium import st_folium
+from folium.plugins import MarkerCluster
 from urllib.parse import quote
 
 # 페이지 설정
@@ -223,7 +224,7 @@ def classify_model(row_data, row_num):
 def create_sample_data():
     """초기 샘플 데이터 생성 (30개) - 실제 좌표 포함"""
     sample_data = {
-        '사이트ID': [f'SITE_{i:03d}' for i in range(1, 21)] + [f'SITE_{i:03d}' for i in range(1, 11)],  # 일부 중복으로 그룹화 테스트
+        '사이트ID': [f'SITE_{i:03d}' for i in range(1, 21)] + [f'SITE_{i:03d}' for i in range(1, 11)],
         '모델분류': [
             '급속스필_100', '급속PNE_100', '신형대', '알박신형', '구형대',
             '급속SK_100', 'F01', '스필_7kW', '급속그린파워_100', 'PNE_7kW',
@@ -248,7 +249,7 @@ def create_sample_data():
             '서울특별시 강서구 공항대로 지하 396', '경기도 성남시 분당구 판교역로 166', '울산광역시 남구 삼산로 282', '강원도 강릉시 경강로 2021', '서울특별시 양천구 목동서로 159',
             '전라남도 목포시 평화로 32', '경기도 성남시 중원구 사기막골로 45번길 14', '서울특별시 성북구 정릉로 77', '충청북도 청주시 상당구 상당로 82', '경상남도 창원시 의창구 중앙대로 151'
         ],
-        '위도': [
+        '위도': [  # AN열 (40번째)
             37.5583, 37.3945, 37.7388, 36.3704, 35.1681,
             37.5376, 37.8813, 37.5665, 35.1595, 37.3217,
             37.6398, 36.5760, 37.5420, 35.8285, 37.3422,
@@ -256,7 +257,7 @@ def create_sample_data():
             37.5583, 37.3945, 35.5384, 37.7519, 37.5172,
             34.7943, 37.4201, 37.5894, 36.6424, 35.2272
         ],
-        '경도': [
+        '경도': [  # AM열 (39번째)
             126.7944, 127.1116, 127.0467, 127.3622, 129.1303,
             126.7253, 127.7298, 126.9018, 126.8526, 127.1085,
             127.0253, 127.1472, 126.7389, 128.5658, 127.9202,
@@ -296,8 +297,7 @@ def create_charger_map(filtered_df):
     🗺️ 핵심 기능: 사이트ID로 그룹화된 충전기 지도 생성
     - AM열(경도), AN열(위도) 사용
     - 사이트ID별 1개 마커 표시
-    - 마우스 오버: 간단 정보
-    - 클릭: 상세 정보 + 네이버 지도 링크
+    - 네이버 지도 연동
     """
     # 유효한 좌표가 있는 데이터만 사용
     map_data = filtered_df.dropna(subset=['위도', '경도']).copy()
@@ -343,7 +343,6 @@ def create_charger_map(filtered_df):
     )
     
     # 마커 클러스터링 추가
-    from folium.plugins import MarkerCluster
     marker_cluster = MarkerCluster(
         name="충전소 클러스터",
         overlay=True,
@@ -556,7 +555,7 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
                 as_cleaned_count += 1
             
             # 🔥 좌표 데이터 수집 (AM열=경도, AN열=위도)
-            site_id = get_safe_value(row_data, 'A')  # A열을 사이트ID로 가정 (수정 가능)
+            site_id = get_safe_value(row_data, 'E')  # E열을 사이트ID로 가정
             longitude = row_data.get('AM')  # 경도
             latitude = row_data.get('AN')   # 위도
             
@@ -716,25 +715,29 @@ def show_dashboard(df):
         
         st.markdown("---")
         
-        # 1행: 주요 지표
+        # 1행: 주요 지표 (🔥 여기서 모든 변수를 미리 계산)
         st.markdown("### 📈 주요 지표")
+        
+        # ✅ 핵심 수정: 모든 변수를 여기서 미리 계산
+        total_chargers = len(filtered_df)
+        unique_sites = filtered_df['사이트ID'].nunique() if '사이트ID' in filtered_df.columns else 0
+        region_count = filtered_df['권역'].nunique()
+        model_count = filtered_df['모델분류'].nunique()  # 🔥 오류 해결: 여기서 계산
+        fast_chargers = len(filtered_df[filtered_df['모델분류'].str.contains('급속', na=False)])
+        fast_ratio = (fast_chargers / total_chargers * 100) if total_chargers > 0 else 0
+        
         kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
         
         with kpi_col1:
-            total_chargers = len(filtered_df)
             st.metric("총 충전기 수", f"{total_chargers:,}대")
         
         with kpi_col2:
-            unique_sites = filtered_df['사이트ID'].nunique() if '사이트ID' in filtered_df.columns else 0
             st.metric("사이트 수", f"{unique_sites:,}개")
         
         with kpi_col3:
-            region_count = filtered_df['권역'].nunique()
             st.metric("권역 수", f"{region_count}개")
         
         with kpi_col4:
-            fast_chargers = len(filtered_df[filtered_df['모델분류'].str.contains('급속', na=False)])
-            fast_ratio = (fast_chargers / total_chargers * 100) if total_chargers > 0 else 0
             st.metric("급속 충전기", f"{fast_chargers:,}대", f"{fast_ratio:.1f}%")
         
         st.markdown("---")
@@ -751,9 +754,9 @@ def show_dashboard(df):
             
             if coord_count > 0:
                 # 사이트 수 계산
-                unique_sites = valid_coords['사이트ID'].nunique() if '사이트ID' in valid_coords.columns else coord_count
+                unique_sites_map = valid_coords['사이트ID'].nunique() if '사이트ID' in valid_coords.columns else coord_count
                 
-                st.success(f"✅ {unique_sites:,}개 사이트, {coord_count:,}개 충전기의 좌표 데이터가 있습니다.")
+                st.success(f"✅ {unique_sites_map:,}개 사이트, {coord_count:,}개 충전기의 좌표 데이터가 있습니다.")
                 
                 # 지도 생성
                 charger_map, error = create_charger_map(filtered_df)
@@ -766,7 +769,7 @@ def show_dashboard(df):
                     # 지도 통계
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("지도 표시 사이트", f"{unique_sites:,}개")
+                        st.metric("지도 표시 사이트", f"{unique_sites_map:,}개")
                     with col2:
                         st.metric("지도 표시 충전기", f"{coord_count:,}대")
                     with col3:
@@ -937,6 +940,7 @@ def show_dashboard(df):
             )
         
         with col3:
+            # ✅ 이제 model_count가 정의되어 있으므로 정상 작동
             summary_report = f"""충전기 현황 요약 리포트
 
 📅 분석 기간: {start_date} ~ {end_date}
@@ -1250,19 +1254,6 @@ def show_classification_info():
         - **마우스 오버:** 사이트ID, 충전기 수, 권역 정보
         - **클릭:** 상세 정보 + 네이버 지도 링크
         - **네이버 지도:** "주소 + 전기차" 검색으로 새 창 열기
-        """)
-        
-        st.warning("""
-        **🔧 사이트ID 열 위치 수정 방법:**
-        
-        현재 코드는 **E열(5번째)**을 사이트ID로 가정하고 있습니다. 
-        만약 사이트ID가 다른 열에 있다면, `process_excel_file_with_progress` 함수에서 
-        `get_safe_value(row_data, 'E')` 부분을 해당 열로 변경하세요.
-        
-        **예시:**
-        - A열: `get_safe_value(row_data, 'A')`
-        - B열: `get_safe_value(row_data, 'B')`
-        - AI열: `get_safe_value(row_data, 'AI')`
         """)
 
 if __name__ == "__main__":
