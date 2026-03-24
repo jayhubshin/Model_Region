@@ -9,7 +9,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-# 페이지 설정 - 대시보드를 위해 wide 레이아웃 사용
+# 페이지 설정
 st.set_page_config(
     page_title="충전기 모델분류 자동화",
     page_icon="⚡",
@@ -36,8 +36,13 @@ def format_time(seconds):
         minutes = int((seconds % 3600) // 60)
         return f"{hours}시간 {minutes}분"
 
-def parse_date_safe(date_value):
-    """엑셀 날짜를 안전하게 파이썬 date 객체로 변환"""
+def clean_and_parse_date(date_value):
+    """
+    🔥 핵심 기능: 날짜 데이터 정리 및 변환
+    - "00:00:00" 같은 시간 부분 제거
+    - 다양한 날짜 형식을 Python date 객체로 변환
+    - 엑셀 시리얼 날짜도 처리
+    """
     if date_value is None:
         return None
     
@@ -47,23 +52,64 @@ def parse_date_safe(date_value):
     if isinstance(date_value, date):
         return date_value
     
-    # 문자열인 경우 여러 형식으로 파싱 시도
+    # 문자열인 경우 처리
     if isinstance(date_value, str):
-        date_formats = ['%Y-%m-%d', '%Y/%m/%d', '%Y.%m.%d', '%Y%m%d']
+        date_str = date_value.strip()
+        
+        # 🎯 정규식으로 다양한 시간 형식 제거
+        date_str = re.sub(r'\s+\d{2}:\d{2}:\d{2}$', '', date_str)      # " 12:34:56"
+        date_str = re.sub(r'\s+00:00:00$', '', date_str)               # " 00:00:00"
+        date_str = re.sub(r'\s+0:00:00$', '', date_str)                # " 0:00:00"
+        
+        if not date_str:
+            return None
+        
+        # 📅 다양한 날짜 형식으로 파싱 시도
+        date_formats = [
+            '%Y-%m-%d',           # 2024-01-15
+            '%Y/%m/%d',           # 2024/01/15
+            '%Y.%m.%d',           # 2024.01.15
+            '%Y%m%d',             # 20240115
+            '%Y-%m-%d %H:%M:%S',  # 2024-01-15 12:34:56
+            '%Y/%m/%d %H:%M:%S',  # 2024/01/15 12:34:56
+            '%d-%m-%Y',           # 15-01-2024
+            '%d/%m/%Y',           # 15/01/2024
+        ]
+        
         for fmt in date_formats:
             try:
-                return datetime.strptime(str(date_value).strip(), fmt).date()
+                return datetime.strptime(date_str, fmt).date()
             except ValueError:
                 continue
     
+    # 숫자인 경우 (엑셀 시리얼 날짜)
+    try:
+        if isinstance(date_value, (int, float)):
+            from datetime import timedelta
+            excel_epoch = datetime(1899, 12, 30)  # 엑셀 기준일
+            return (excel_epoch + timedelta(days=float(date_value))).date()
+    except:
+        pass
+    
     return None
+
+def format_date_for_excel(date_obj):
+    """date 객체를 엑셀용 YYYY-MM-DD 문자열로 변환"""
+    if date_obj is None:
+        return None
+    if isinstance(date_obj, date):
+        return date_obj.strftime('%Y-%m-%d')
+    return None
+
+def parse_date_safe(date_value):
+    """대시보드용 날짜 파싱 (clean_and_parse_date와 동일)"""
+    return clean_and_parse_date(date_value)
 
 def classify_region(address):
     """H열의 주소 데이터를 기반으로 권역을 분류하는 함수"""
     if not address:
         return "기타"
     
-    # 1단계: 서울/경기 체크
     if re.search(r"서울|경기", address):
         if re.search(r"고양시|부천시|김포시|파주시|은평구|마포구|서대문구|양천구|강서구|용산구|중구|종로구", address):
             return "수도권북서"
@@ -191,7 +237,9 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
         wb = openpyxl.load_workbook(file_stream, data_only=True)
         ws = wb.active
         
-        # BA열(53번째)과 BB열(54번째)
+        # 열 번호 정의
+        AR_COLUMN = 44  # 운영계약 시작일
+        AS_COLUMN = 45  # 운영계약 종료일
         BA_COLUMN = 53  # 모델분류
         BB_COLUMN = 54  # 권역
         
@@ -212,11 +260,14 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
         max_col = max(ws.max_column, 54)
         total_rows = max_row - 4
         
-        # 대시보드용 데이터 수집 리스트
         dashboard_data = []
         
-        # 3단계: 분류 작업
-        status_text.markdown(f"⚡ **모델분류 및 권역분류 작업을 시작합니다... (총 {total_rows:,}개 행)**")
+        # 📅 날짜 정리 통계 변수
+        ar_cleaned_count = 0
+        as_cleaned_count = 0
+        
+        # 3단계: 분류 및 날짜 정리 작업
+        status_text.markdown(f"⚡ **모델분류, 권역분류 및 날짜 정리 작업을 시작합니다... (총 {total_rows:,}개 행)**")
         progress_bar.progress(20)
         
         processed_count = 0
@@ -240,16 +291,35 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
             region_result = classify_region(address)
             ws.cell(row=row_num, column=BB_COLUMN, value=region_result)
             
-            # 대시보드용 데이터 수집 (AR=44열, AS=45열)
-            ar_value = row_data.get('AR')  # 운영계약 시작일
-            as_value = row_data.get('AS')  # 운영계약 종료일
+            # 🔥 핵심: AR열(운영계약 시작일) 날짜 정리
+            ar_value = row_data.get('AR')
+            ar_cleaned = clean_and_parse_date(ar_value)
+            if ar_cleaned:
+                ar_formatted = format_date_for_excel(ar_cleaned)
+                ws.cell(row=row_num, column=AR_COLUMN, value=ar_formatted)
+                # 엑셀 날짜 형식 지정
+                ws.cell(row=row_num, column=AR_COLUMN).number_format = 'YYYY-MM-DD'
+                ar_cleaned_count += 1
             
+            # 🔥 핵심: AS열(운영계약 종료일) 날짜 정리
+            as_value = row_data.get('AS')
+            as_cleaned = clean_and_parse_date(as_value)
+            if as_cleaned:
+                as_formatted = format_date_for_excel(as_cleaned)
+                ws.cell(row=row_num, column=AS_COLUMN, value=as_formatted)
+                # 엑셀 날짜 형식 지정
+                ws.cell(row=row_num, column=AS_COLUMN).number_format = 'YYYY-MM-DD'
+                as_cleaned_count += 1
+            
+            # 대시보드용 데이터 수집
             dashboard_data.append({
                 '모델분류': classification_result,
                 '권역': region_result,
                 '주소': address,
                 '운영계약시작일': ar_value,
                 '운영계약종료일': as_value,
+                '운영계약시작일_cleaned': ar_cleaned,
+                '운영계약종료일_cleaned': as_cleaned,
                 '행번호': row_num
             })
             
@@ -294,10 +364,10 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
         wb.save(output_stream)
         output_stream.seek(0)
         
-        # DataFrame 생성 및 날짜 변환
+        # DataFrame 생성 (정리된 날짜 사용)
         df = pd.DataFrame(dashboard_data)
-        df['운영계약시작일_parsed'] = df['운영계약시작일'].apply(parse_date_safe)
-        df['운영계약종료일_parsed'] = df['운영계약종료일'].apply(parse_date_safe)
+        df['운영계약시작일_parsed'] = df['운영계약시작일_cleaned']
+        df['운영계약종료일_parsed'] = df['운영계약종료일_cleaned']
         
         # 완료
         total_time = time.time() - start_time
@@ -308,16 +378,19 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
         avg_speed = processed_count / total_time if total_time > 0 else 0
         status_text.markdown(
             f"🎊 **처리 완료!** `{processed_count:,}개 행`이 성공적으로 분류되었습니다. | "
-            f"**평균 속도:** `{avg_speed:.1f}행/초`"
+            f"**평균 속도:** `{avg_speed:.1f}행/초` | "
+            f"📅 **날짜 정리:** AR열 `{ar_cleaned_count:,}개`, AS열 `{as_cleaned_count:,}개`"
         )
         
-        return output_stream, None, processed_count, total_time, df
+        return output_stream, None, processed_count, total_time, df, ar_cleaned_count, as_cleaned_count
         
     except Exception as e:
+        import traceback
         elapsed = time.time() - start_time
         title_container.markdown(f"### ❌ 작업 중단 `⚠️ {format_time(elapsed)}`")
         status_text.markdown("❌ **오류가 발생했습니다.**")
-        return None, f"파일 처리 중 오류 발생: {str(e)}", 0, 0, None
+        error_detail = traceback.format_exc()
+        return None, f"파일 처리 중 오류 발생: {str(e)}\n\n상세:\n{error_detail}", 0, 0, None, 0, 0
 
 def show_dashboard(df):
     """대시보드 화면을 표시하는 함수"""
@@ -357,8 +430,7 @@ def show_dashboard(df):
             st.markdown("<br>", unsafe_allow_html=True)
             filter_applied = st.button("🔍 필터 적용", type="primary", use_container_width=True)
         
-        # 필터 적용 로직: 계약 기간이 선택한 기간과 겹치는 경우
-        # 조건: (계약시작일 < 선택종료일) AND (계약종료일 >= 선택시작일)
+        # 필터 적용 로직
         mask = (
             (df['운영계약시작일_parsed'] < end_date) & 
             (df['운영계약종료일_parsed'] >= start_date) &
@@ -491,7 +563,7 @@ def show_dashboard(df):
         # 크로스탭 생성
         crosstab = pd.crosstab(filtered_df['권역'], filtered_df['모델분류'])
         
-        # 상위 모델만 표시 (전체 수량 기준 상위 12개)
+        # 상위 모델만 표시
         top_models = filtered_df['모델분류'].value_counts().head(12).index
         crosstab_filtered = crosstab[top_models]
         
@@ -530,7 +602,6 @@ def show_dashboard(df):
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            # 피벗 테이블 CSV 다운로드
             csv_pivot = pivot_wide.to_csv(encoding='utf-8-sig')
             st.download_button(
                 label="📊 권역×모델 현황표 CSV",
@@ -541,7 +612,6 @@ def show_dashboard(df):
             )
         
         with col2:
-            # 필터링된 원본 데이터 CSV 다운로드
             csv_filtered = filtered_df.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(
                 label="📋 필터링된 전체 데이터 CSV",
@@ -552,7 +622,6 @@ def show_dashboard(df):
             )
         
         with col3:
-            # 요약 리포트 생성
             summary_report = f"""충전기 현황 요약 리포트
 
 📅 분석 기간: {start_date} ~ {end_date}
@@ -590,7 +659,7 @@ def main():
     st.title("⚡ 충전기 모델분류 & 운영현황 대시보드")
     st.markdown("""
     엑셀 파일을 업로드하면 **BA열**에 "모델분류", **BB열**에 "권역"을 자동으로 추가하고,  
-    **AR열(운영계약 시작일)**과 **AS열(운영계약 종료일)** 기준으로 충전기 현황을 분석할 수 있습니다.
+    **AR열/AS열**의 날짜 데이터를 정리하여 운영 현황을 분석할 수 있습니다.
     """)
     
     # 탭 구성
@@ -630,12 +699,14 @@ def main():
                 
                 # 파일 처리 실행
                 file_bytes = uploaded_file.read()
-                processed_file, error, processed_count, total_time, df = process_excel_file_with_progress(
+                result = process_excel_file_with_progress(
                     file_bytes, 
                     title_container,
                     progress_bar, 
                     status_text
                 )
+                
+                processed_file, error, processed_count, total_time, df, ar_cleaned, as_cleaned = result
                 
                 if error:
                     st.error(f"❌ {error}")
@@ -648,6 +719,12 @@ def main():
                     st.success(
                         f"🎊 **축하합니다!** 총 **{processed_count:,}개 행**의 모델분류 및 권역분류가 "
                         f"**{format_time(total_time)}**만에 완료되었습니다!"
+                    )
+                    
+                    # 📅 날짜 정리 정보
+                    st.info(
+                        f"📅 **날짜 정리 완료:** AR열(운영계약시작일) `{ar_cleaned:,}개`, "
+                        f"AS열(운영계약종료일) `{as_cleaned:,}개` - 시간 부분(00:00:00) 제거 및 YYYY-MM-DD 형식으로 변환"
                     )
                     
                     # 다운로드 버튼
@@ -669,7 +746,7 @@ def main():
                     
                     # 처리 결과 요약
                     with st.expander("📋 처리 결과 상세 정보", expanded=False):
-                        col1, col2, col3, col4 = st.columns(4)
+                        col1, col2, col3, col4, col5 = st.columns(5)
                         with col1:
                             st.metric("처리된 행 수", f"{processed_count:,}개")
                         with col2:
@@ -678,9 +755,11 @@ def main():
                             avg_speed = processed_count / total_time if total_time > 0 else 0
                             st.metric("처리 속도", f"{avg_speed:.1f}행/초")
                         with col4:
-                            st.metric("결과 열", "BA, BB열")
+                            st.metric("AR열 정리", f"{ar_cleaned:,}개")
+                        with col5:
+                            st.metric("AS열 정리", f"{as_cleaned:,}개")
         
-        # 분류 기준 정보 (접을 수 있는 형태로)
+        # 분류 기준 정보
         with st.expander("💡 분류 기준 정보 보기", expanded=False):
             show_classification_info()
     
@@ -690,37 +769,17 @@ def main():
         else:
             st.info("📁 먼저 **'파일 업로드 & 분류'** 탭에서 파일을 업로드하고 분류 작업을 완료해주세요.")
             
-            # 대시보드 미리보기 정보
             st.markdown("""
             ### 📊 대시보드에서 확인할 수 있는 정보
             
             **🗓️ 운영계약 기간 필터링**
             - AR열(운영계약 시작일)과 AS열(운영계약 종료일) 기준
-            - 예시: 2022-01-01 ~ 2028-01-01 기간 설정 가능
+            - 날짜 데이터 자동 정리 (00:00:00 제거, YYYY-MM-DD 형식)
             
-            **📈 주요 지표 (KPI)**
-            - 총 충전기 수, 모델 종류, 권역 수, 급속 충전기 비율
-            
-            **⚡ 모델별 현황**
-            - 인터랙티브 막대 그래프 (상위 15개 모델)
-            - 상세 수량 테이블 (비율 포함)
-            
-            **🗺️ 권역별 현황**
-            - 파이 차트 (비율 시각화)
-            - 막대 그래프 (절대값 비교)
-            
-            **🔥 권역 × 모델 히트맵**
-            - 교차 분포 시각화
-            - 색상 강도로 수량 표현
-            
-            **📋 상세 크로스탭 테이블**
-            - 권역별 × 모델별 수량 매트릭스
-            - 합계 행/열 자동 계산
-            
-            **📥 다운로드 옵션**
-            - 권역×모델 현황표 CSV
-            - 필터링된 전체 데이터 CSV  
-            - 요약 리포트 TXT
+            **📈 주요 지표, 모델별/권역별 현황**
+            - 인터랙티브 차트 및 상세 테이블
+            - 권역 × 모델 히트맵
+            - 다양한 형식의 데이터 다운로드
             """)
 
 def show_classification_info():
@@ -754,7 +813,6 @@ def show_classification_info():
         }
         
         st.dataframe(fast_charger_data, use_container_width=True, hide_index=True)
-        st.warning("⚠️ **중요:** 급속 충전기는 위에서 아래 순서대로 조건을 검사합니다.")
     
     with subtab2:
         st.markdown("#### 🔌 완속 충전기 분류 기준")
@@ -768,23 +826,10 @@ def show_classification_info():
                 "신형대 (EVL+1107)", "구형대 (EVL 기본)", "신형대 (SBDA)", "신형소",
                 "F01 / PC01 (SBPA)", "UC01", "스필_7kW", "이카플러그", "중앙제어_7kW",
                 "SK_7kW", "3kW", "PNE_7kW", "F01 / PC01 (SBOA)", "기타"
-            ],
-            "판별 조건": [
-                "AG열 처음 4자리 = NC07", "AG열 처음 4자리 = 23NA/22NA/24NA/25NA",
-                "AD열에 '3J10' 포함", "AG열 처음 11자리 = EVL-1C-22CQ",
-                "AG열 처음 6자리 = EVL-1C", "AG열 처음 4자리 = EVL- AND AD열에 '1107' 포함",
-                "AG열 처음 4자리 = EVL-", "AG열 처음 4자리 = SBDA",
-                "AG열 처음 4자리 = SBAA", "AG열 처음 4자리 = SBPA (AD열 F01 유무)",
-                "AG열 처음 4자리 = SBUA", "AG열 처음 4자리 = SVI0",
-                "AG열 처음 3자리 = E0C OR AD열에 'CP' 포함", "AG열 처음 4자리 = 1907/1912",
-                "AG열 처음 4자리 = SC-P", "AG열 처음 4자리 = SANA",
-                "AG열 처음 4자리 = EVS-/007S", "AG열 처음 4자리 = SBOA (AD열 F01 유무)",
-                "위 모든 조건에 해당 없음"
             ]
         }
         
         st.dataframe(slow_charger_data, use_container_width=True, hide_index=True)
-        st.error("🚨 **핵심:** 완속 충전기는 **우선순위** 순서대로 조건을 검사합니다!")
     
     with subtab3:
         st.markdown("#### 🗺️ 권역 분류 기준 (H열 주소 기반)")
@@ -824,8 +869,8 @@ def show_classification_info():
             | **AG열** | 33번째 | 모델 코드 (주요 기준) |
             | **AH열** | 34번째 | 급속/완속 구분 |
             | **AJ열** | 36번째 | 용량 정보 (kW) |
-            | **AR열** | 44번째 | 운영계약 시작일 |
-            | **AS열** | 45번째 | 운영계약 종료일 |
+            | **AR열** | 44번째 | 운영계약 시작일 ✨정리 |
+            | **AS열** | 45번째 | 운영계약 종료일 ✨정리 |
             """)
         
         with col2:
@@ -838,7 +883,17 @@ def show_classification_info():
             | **권역 헤더** | BB열 4행 | "권역" |
             | **모델분류 결과** | BA열 5행~ | 각 행별 분류값 |
             | **권역 결과** | BB열 5행~ | 각 행별 권역값 |
+            | **AR열 정리** | AR열 5행~ | YYYY-MM-DD 형식 |
+            | **AS열 정리** | AS열 5행~ | YYYY-MM-DD 형식 |
             """)
+        
+        st.success("""
+        **✨ 날짜 정리 기능:**
+        - **AR열, AS열**의 "00:00:00" 같은 시간 부분 자동 제거
+        - **YYYY-MM-DD** 형식으로 통일
+        - 다양한 날짜 형식 자동 인식 (YYYY/MM/DD, YYYY.MM.DD 등)
+        - 엑셀 날짜 형식 지정으로 정렬 및 필터링 최적화
+        """)
 
 if __name__ == "__main__":
     main()
