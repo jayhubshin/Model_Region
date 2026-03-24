@@ -8,6 +8,7 @@ from datetime import datetime, date
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import pytz
 
 # 페이지 설정
 st.set_page_config(
@@ -15,6 +16,11 @@ st.set_page_config(
     page_icon="⚡",
     layout="wide"
 )
+
+def get_korea_time():
+    """한국 시간(KST) 반환"""
+    korea_tz = pytz.timezone('Asia/Seoul')
+    return datetime.now(korea_tz)
 
 def get_safe_value(row_data, col_letter):
     """엑셀 셀 값을 안전하게 문자열로 가져오는 헬퍼 함수"""
@@ -37,43 +43,30 @@ def format_time(seconds):
         return f"{hours}시간 {minutes}분"
 
 def clean_and_parse_date(date_value):
-    """
-    🔥 핵심 기능: 날짜 데이터 정리 및 변환
-    - "00:00:00" 같은 시간 부분 제거
-    - 다양한 날짜 형식을 Python date 객체로 변환
-    - 엑셀 시리얼 날짜도 처리
-    """
+    """날짜 데이터 정리 및 변환"""
     if date_value is None:
         return None
     
-    # 이미 datetime 또는 date 객체인 경우
     if isinstance(date_value, datetime):
         return date_value.date()
     if isinstance(date_value, date):
         return date_value
     
-    # 문자열인 경우 처리
     if isinstance(date_value, str):
         date_str = date_value.strip()
         
-        # 🎯 정규식으로 다양한 시간 형식 제거
-        date_str = re.sub(r'\s+\d{2}:\d{2}:\d{2}$', '', date_str)      # " 12:34:56"
-        date_str = re.sub(r'\s+00:00:00$', '', date_str)               # " 00:00:00"
-        date_str = re.sub(r'\s+0:00:00$', '', date_str)                # " 0:00:00"
+        # 시간 부분 제거
+        date_str = re.sub(r'\s+\d{2}:\d{2}:\d{2}$', '', date_str)
+        date_str = re.sub(r'\s+00:00:00$', '', date_str)
+        date_str = re.sub(r'\s+0:00:00$', '', date_str)
         
         if not date_str:
             return None
         
-        # 📅 다양한 날짜 형식으로 파싱 시도
         date_formats = [
-            '%Y-%m-%d',           # 2024-01-15
-            '%Y/%m/%d',           # 2024/01/15
-            '%Y.%m.%d',           # 2024.01.15
-            '%Y%m%d',             # 20240115
-            '%Y-%m-%d %H:%M:%S',  # 2024-01-15 12:34:56
-            '%Y/%m/%d %H:%M:%S',  # 2024/01/15 12:34:56
-            '%d-%m-%Y',           # 15-01-2024
-            '%d/%m/%Y',           # 15/01/2024
+            '%Y-%m-%d', '%Y/%m/%d', '%Y.%m.%d', '%Y%m%d',
+            '%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S',
+            '%d-%m-%Y', '%d/%m/%Y',
         ]
         
         for fmt in date_formats:
@@ -82,11 +75,10 @@ def clean_and_parse_date(date_value):
             except ValueError:
                 continue
     
-    # 숫자인 경우 (엑셀 시리얼 날짜)
     try:
         if isinstance(date_value, (int, float)):
             from datetime import timedelta
-            excel_epoch = datetime(1899, 12, 30)  # 엑셀 기준일
+            excel_epoch = datetime(1899, 12, 30)
             return (excel_epoch + timedelta(days=float(date_value))).date()
     except:
         pass
@@ -102,7 +94,7 @@ def format_date_for_excel(date_obj):
     return None
 
 def parse_date_safe(date_value):
-    """대시보드용 날짜 파싱 (clean_and_parse_date와 동일)"""
+    """대시보드용 날짜 파싱"""
     return clean_and_parse_date(date_value)
 
 def classify_region(address):
@@ -118,7 +110,7 @@ def classify_region(address):
     
     # 🔥 핵심 개선 1: 인천을 먼저 검사 (우선순위 조정)
     if re.search(r"인천", address_clean):
-        # 인천 세부 구/군 검사
+        # 인천 세부 구/군 검사 ("구" 없이도 매칭)
         if re.search(r"계양|남동|동구|미추홀|부평|연수|서구|중구|강화", address_clean):
             return "수도권남서"
         else:
@@ -159,7 +151,6 @@ def classify_region(address):
         return "전라권"
     else:
         return "기타"
-
 
 def classify_model(row_data, row_num):
     """엑셀 IFS 수식을 파이썬 로직으로 변환한 모델 분류 함수"""
@@ -246,6 +237,60 @@ def classify_model(row_data, row_num):
     else:
         return "기타"
 
+def create_sample_data():
+    """🔥 핵심: 초기 샘플 데이터 생성 (30개)"""
+    sample_data = {
+        '모델분류': [
+            '급속스필_100', '급속PNE_100', '신형대', '알박신형', '구형대',
+            '급속SK_100', 'F01', '스필_7kW', '급속그린파워_100', 'PNE_7kW',
+            '급속코스텔_50', '신형소', '이카플러그', '급속애플망고_200', 'UC01',
+            '급속PNE_50', '10kW', 'SK_7kW', '중앙제어_7kW', '3kW',
+            '급속스필_100', '신형대', '알박신형', '급속PNE_100', '구형대',
+            '급속SK_200', 'F01', '급속그린파워_50', 'PNE_7kW', '급속알박_50'
+        ],
+        '권역': [
+            '수도권북서', '수도권남동', '수도권북동', '충청권', '경상권',
+            '수도권남서', '강원권', '수도권북서', '전라권', '수도권남동',
+            '수도권북동', '충청권', '수도권남서', '경상권', '강원권',
+            '수도권북서', '전라권', '수도권남동', '수도권북동', '충청권',
+            '수도권남서', '경상권', '강원권', '수도권북서', '전라권',
+            '수도권남동', '수도권북동', '충청권', '수도권남서', '경상권'
+        ],
+        '주소': [
+            '서울특별시 강서구', '경기도 성남시', '경기도 의정부 상금로 36', '대전광역시 유성구', '부산광역시 해운대구',
+            '인천광역시 계양구 안남로 560', '강원도 춘천시', '서울특별시 마포구', '광주광역시 서구', '경기도 용인시',
+            '서울특별시 강북구', '충청남도 천안시', '인천광역시 계양구 봉오대로744번길', '대구광역시 달서구', '강원도 원주시',
+            '서울특별시 은평구', '전라북도 전주시', '경기도 수원시', '서울특별시 중랑구', '세종특별자치시',
+            '서울특별시 관악구', '울산광역시 남구', '강원도 강릉시', '서울특별시 양천구', '전라남도 목포시',
+            '경기도 성남시', '서울특별시 성북구', '충청북도 청주시', '서울특별시 금천구', '경상남도 창원시'
+        ],
+        '운영계약시작일': [
+            date(2022, 1, 15), date(2022, 3, 20), date(2022, 5, 10), date(2022, 7, 5), date(2022, 9, 1),
+            date(2023, 1, 10), date(2023, 3, 15), date(2023, 5, 20), date(2023, 7, 8), date(2023, 9, 12),
+            date(2024, 1, 5), date(2024, 3, 10), date(2024, 5, 15), date(2024, 7, 20), date(2024, 9, 5),
+            date(2025, 1, 8), date(2025, 3, 12), date(2025, 5, 18), date(2025, 7, 22), date(2025, 9, 10),
+            date(2022, 2, 14), date(2022, 6, 18), date(2022, 10, 22), date(2023, 2, 15), date(2023, 6, 20),
+            date(2024, 2, 10), date(2024, 6, 15), date(2024, 10, 20), date(2025, 2, 12), date(2025, 6, 18)
+        ],
+        '운영계약종료일': [
+            date(2028, 1, 14), date(2028, 3, 19), date(2028, 5, 9), date(2028, 7, 4), date(2028, 8, 31),
+            date(2029, 1, 9), date(2029, 3, 14), date(2029, 5, 19), date(2029, 7, 7), date(2029, 9, 11),
+            date(2030, 1, 4), date(2030, 3, 9), date(2030, 5, 14), date(2030, 7, 19), date(2030, 9, 4),
+            date(2031, 1, 7), date(2031, 3, 11), date(2031, 5, 17), date(2031, 7, 21), date(2031, 9, 9),
+            date(2028, 2, 13), date(2028, 6, 17), date(2028, 10, 21), date(2029, 2, 14), date(2029, 6, 19),
+            date(2030, 2, 9), date(2030, 6, 14), date(2030, 10, 19), date(2031, 2, 11), date(2031, 6, 17)
+        ]
+    }
+    
+    df = pd.DataFrame(sample_data)
+    df['운영계약시작일_parsed'] = df['운영계약시작일']
+    df['운영계약종료일_parsed'] = df['운영계약종료일']
+    df['운영계약시작일_cleaned'] = df['운영계약시작일']
+    df['운영계약종료일_cleaned'] = df['운영계약종료일']
+    df['행번호'] = range(5, 5 + len(df))
+    
+    return df
+
 def process_excel_file_with_progress(file_bytes, title_container, progress_bar, status_text):
     """실시간 타이머와 함께 엑셀 파일을 처리하고 대시보드용 DataFrame 생성"""
     try:
@@ -285,8 +330,6 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
         total_rows = max_row - 4
         
         dashboard_data = []
-        
-        # 📅 날짜 정리 통계 변수
         ar_cleaned_count = 0
         as_cleaned_count = 0
         
@@ -299,7 +342,6 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
         update_interval = 0.5
         
         for i, row_num in enumerate(range(5, max_row + 1)):
-            # 현재 행의 모든 데이터 수집
             row_data = {}
             for col_num in range(1, max_col + 1):
                 col_letter = get_column_letter(col_num)
@@ -315,27 +357,24 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
             region_result = classify_region(address)
             ws.cell(row=row_num, column=BB_COLUMN, value=region_result)
             
-            # 🔥 핵심: AR열(운영계약 시작일) 날짜 정리
+            # AR열 날짜 정리
             ar_value = row_data.get('AR')
             ar_cleaned = clean_and_parse_date(ar_value)
             if ar_cleaned:
                 ar_formatted = format_date_for_excel(ar_cleaned)
                 ws.cell(row=row_num, column=AR_COLUMN, value=ar_formatted)
-                # 엑셀 날짜 형식 지정
                 ws.cell(row=row_num, column=AR_COLUMN).number_format = 'YYYY-MM-DD'
                 ar_cleaned_count += 1
             
-            # 🔥 핵심: AS열(운영계약 종료일) 날짜 정리
+            # AS열 날짜 정리
             as_value = row_data.get('AS')
             as_cleaned = clean_and_parse_date(as_value)
             if as_cleaned:
                 as_formatted = format_date_for_excel(as_cleaned)
                 ws.cell(row=row_num, column=AS_COLUMN, value=as_formatted)
-                # 엑셀 날짜 형식 지정
                 ws.cell(row=row_num, column=AS_COLUMN).number_format = 'YYYY-MM-DD'
                 as_cleaned_count += 1
             
-            # 대시보드용 데이터 수집
             dashboard_data.append({
                 '모델분류': classification_result,
                 '권역': region_result,
@@ -349,7 +388,6 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
             
             processed_count += 1
             
-            # 실시간 업데이트
             current_time = time.time()
             should_update = (
                 (i + 1) % 50 == 0 or
@@ -388,12 +426,10 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
         wb.save(output_stream)
         output_stream.seek(0)
         
-        # DataFrame 생성 (정리된 날짜 사용)
         df = pd.DataFrame(dashboard_data)
         df['운영계약시작일_parsed'] = df['운영계약시작일_cleaned']
         df['운영계약종료일_parsed'] = df['운영계약종료일_cleaned']
         
-        # 완료
         total_time = time.time() - start_time
         progress_bar.progress(100)
         
@@ -423,7 +459,6 @@ def show_dashboard(df):
     # 날짜 필터 섹션
     st.markdown("### 🗓️ 운영계약 기간 필터")
     
-    # 데이터에서 날짜 범위 계산
     valid_dates = df.dropna(subset=['운영계약시작일_parsed', '운영계약종료일_parsed'])
     
     if len(valid_dates) > 0:
@@ -454,7 +489,6 @@ def show_dashboard(df):
             st.markdown("<br>", unsafe_allow_html=True)
             filter_applied = st.button("🔍 필터 적용", type="primary", use_container_width=True)
         
-        # 필터 적용 로직
         mask = (
             (df['운영계약시작일_parsed'] < end_date) & 
             (df['운영계약종료일_parsed'] >= start_date) &
@@ -464,7 +498,6 @@ def show_dashboard(df):
         
         filtered_df = df[mask].copy()
         
-        # 필터 결과 요약
         st.info(
             f"📅 **선택 기간:** {start_date} ~ {end_date} | "
             f"**해당 기간 충전기:** {len(filtered_df):,}대 (전체 {len(df):,}대 중 {len(filtered_df)/len(df)*100:.1f}%)"
@@ -474,10 +507,9 @@ def show_dashboard(df):
             st.warning("⚠️ 선택한 기간에 해당하는 데이터가 없습니다. 필터 조건을 조정해주세요.")
             return
         
-        # 대시보드 메인 콘텐츠
         st.markdown("---")
         
-        # 1행: 주요 지표 (KPI)
+        # 1행: 주요 지표
         st.markdown("### 📈 주요 지표")
         kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
         
@@ -506,11 +538,9 @@ def show_dashboard(df):
         col1, col2 = st.columns([3, 2])
         
         with col1:
-            # 모델별 집계
             model_counts = filtered_df['모델분류'].value_counts().reset_index()
             model_counts.columns = ['모델분류', '수량']
             
-            # 상위 15개 모델 막대 그래프
             fig_model = px.bar(
                 model_counts.head(15),
                 x='수량',
@@ -527,7 +557,6 @@ def show_dashboard(df):
             st.plotly_chart(fig_model, use_container_width=True)
         
         with col2:
-            # 모델별 수량 테이블
             st.markdown("#### 📋 모델별 수량 상세")
             model_counts['비율'] = (model_counts['수량'] / model_counts['수량'].sum() * 100).round(1)
             model_counts['비율'] = model_counts['비율'].astype(str) + '%'
@@ -547,11 +576,9 @@ def show_dashboard(df):
         col1, col2 = st.columns([2, 3])
         
         with col1:
-            # 권역별 집계
             region_counts = filtered_df['권역'].value_counts().reset_index()
             region_counts.columns = ['권역', '수량']
             
-            # 파이 차트
             fig_region_pie = px.pie(
                 region_counts,
                 values='수량',
@@ -564,7 +591,6 @@ def show_dashboard(df):
             st.plotly_chart(fig_region_pie, use_container_width=True)
         
         with col2:
-            # 권역별 막대 그래프
             fig_region_bar = px.bar(
                 region_counts,
                 x='권역',
@@ -584,10 +610,7 @@ def show_dashboard(df):
         # 4행: 권역별 모델 분포 히트맵
         st.markdown("### 🔥 권역별 모델 분포 히트맵")
         
-        # 크로스탭 생성
         crosstab = pd.crosstab(filtered_df['권역'], filtered_df['모델분류'])
-        
-        # 상위 모델만 표시
         top_models = filtered_df['모델분류'].value_counts().head(12).index
         crosstab_filtered = crosstab[top_models]
         
@@ -609,12 +632,10 @@ def show_dashboard(df):
         # 5행: 상세 데이터 테이블
         st.markdown("### 📋 권역별 × 모델별 상세 현황")
         
-        # 피벗 테이블 생성
         pivot_wide = pd.crosstab(filtered_df['권역'], filtered_df['모델분류'], margins=True)
         
-        # 스타일링된 테이블 표시
         st.dataframe(
-            pivot_wide.style.background_gradient(cmap='YlOrRd', axis=None),
+            pivot_wide,
             use_container_width=True,
             height=400
         )
@@ -668,27 +689,64 @@ def show_dashboard(df):
                 mime="text/plain",
                 use_container_width=True
             )
+        
+        # 🔥 데이터 품질 체크 섹션 추가
+        st.markdown("---")
+        st.markdown("### 🔍 데이터 품질 체크")
+        
+        # ✅ 수정: isin() 사용으로 정규식 오류 방지
+        problematic_regions = ['수도권??', '인천??', '기타', '수도권기타']
+        unknown_regions = filtered_df[
+            filtered_df['권역'].isin(problematic_regions)
+        ]
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            normal_count = len(filtered_df) - len(unknown_regions)
+            normal_ratio = (normal_count / len(filtered_df) * 100) if len(filtered_df) > 0 else 0
+            st.metric("정상 분류", f"{normal_count:,}대", f"{normal_ratio:.1f}%")
+        
+        with col2:
+            unknown_ratio = (len(unknown_regions) / len(filtered_df) * 100) if len(filtered_df) > 0 else 0
+            st.metric("미분류/불명확", f"{len(unknown_regions):,}대", f"{unknown_ratio:.1f}%")
+        
+        if len(unknown_regions) > 0:
+            st.warning(f"⚠️ {len(unknown_regions):,}개의 주소가 미분류되었거나 불명확합니다.")
+            
+            with st.expander("🔍 미분류 주소 상세 보기", expanded=False):
+                # 권역별 통계
+                unknown_stats = unknown_regions['권역'].value_counts()
+                st.markdown("**권역별 미분류 통계:**")
+                st.dataframe(
+                    unknown_stats.reset_index().rename(columns={'권역': '권역', 'count': '수량'}),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                st.markdown("**상세 주소 목록 (최대 10개):**")
+                display_cols = ['주소', '권역', '모델분류']
+                available_cols = [col for col in display_cols if col in unknown_regions.columns]
+                
+                st.dataframe(
+                    unknown_regions[available_cols].head(10),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                if len(unknown_regions) > 10:
+                    st.info(f"💡 총 {len(unknown_regions):,}개 중 10개만 표시됩니다.")
+        else:
+            st.success("✅ 모든 주소가 정확하게 분류되었습니다!")
     
     else:
         st.warning("⚠️ 유효한 운영계약 날짜 데이터가 없습니다. AR열과 AS열을 확인해주세요.")
 
-# 🔍 미분류 주소 디버깅 섹션
-    unknown_regions = filtered_df[
-        filtered_df['권역'].str.contains('??|기타', na=False)
-    ]
-    
-    if len(unknown_regions) > 0:
-        st.warning(f"⚠️ {len(unknown_regions)}개의 주소가 미분류되었습니다.")
-        with st.expander("🔍 미분류 주소 상세 보기"):
-            st.dataframe(
-                unknown_regions[['주소', '권역']].head(10),
-                use_container_width=True
-            )
-
 def main():
-    # 세션 상태 초기화
+    # 🔥 핵심: 세션 상태 초기화 시 샘플 데이터 자동 로드
     if 'processed_df' not in st.session_state:
-        st.session_state.processed_df = None
+        st.session_state.processed_df = create_sample_data()
+        st.session_state.is_sample_data = True
     if 'processed_file' not in st.session_state:
         st.session_state.processed_file = None
     
@@ -703,7 +761,10 @@ def main():
     tab1, tab2 = st.tabs(["📁 파일 업로드 & 분류", "📊 운영현황 대시보드"])
     
     with tab1:
-        # 파일 업로더
+        # 샘플 데이터 안내
+        if st.session_state.get('is_sample_data', False):
+            st.info("💡 **현재 샘플 데이터가 로드되어 있습니다.** '운영현황 대시보드' 탭에서 바로 기능을 체험해보세요!")
+        
         uploaded_file = st.file_uploader(
             "📁 엑셀 파일을 선택하세요",
             type=['xlsx', 'xls'],
@@ -711,7 +772,6 @@ def main():
         )
         
         if uploaded_file is not None:
-            # 파일 정보 표시
             col1, col2 = st.columns([3, 1])
             with col1:
                 st.info(f"📄 **{uploaded_file.name}**")
@@ -722,10 +782,8 @@ def main():
                 else:
                     st.metric("파일 크기", f"{uploaded_file.size / 1024:.1f} KB")
             
-            # 처리 버튼
             if st.button("🚀 모델분류 시작", type="primary", use_container_width=True):
                 
-                # 실시간 진행 상황 표시
                 title_container = st.empty()
                 title_container.markdown("### 📊 작업 진행 상황 `⏱️ 0.0초`")
                 
@@ -734,7 +792,6 @@ def main():
                 
                 st.markdown("---")
                 
-                # 파일 처리 실행
                 file_bytes = uploaded_file.read()
                 result = process_excel_file_with_progress(
                     file_bytes, 
@@ -748,24 +805,24 @@ def main():
                 if error:
                     st.error(f"❌ {error}")
                 else:
-                    # 세션 상태에 데이터 저장
+                    # 🔥 샘플 데이터 플래그 제거
                     st.session_state.processed_df = df
                     st.session_state.processed_file = processed_file
+                    st.session_state.is_sample_data = False
                     
-                    # 성공 메시지
                     st.success(
                         f"🎊 **축하합니다!** 총 **{processed_count:,}개 행**의 모델분류 및 권역분류가 "
                         f"**{format_time(total_time)}**만에 완료되었습니다!"
                     )
                     
-                    # 📅 날짜 정리 정보
                     st.info(
                         f"📅 **날짜 정리 완료:** AR열(운영계약시작일) `{ar_cleaned:,}개`, "
                         f"AS열(운영계약종료일) `{as_cleaned:,}개` - 시간 부분(00:00:00) 제거 및 YYYY-MM-DD 형식으로 변환"
                     )
                     
-                    # 다운로드 버튼
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    # 🔥 한국 시간 적용
+                    korea_time = get_korea_time()
+                    timestamp = korea_time.strftime("%Y%m%d_%H%M%S")
                     download_name = f"모델분류_결과_{timestamp}.xlsx"
                     
                     col1, col2, col3 = st.columns([1, 2, 1])
@@ -781,7 +838,6 @@ def main():
                     
                     st.info("💡 **'운영현황 대시보드'** 탭으로 이동하여 데이터를 분석해보세요!")
                     
-                    # 처리 결과 요약
                     with st.expander("📋 처리 결과 상세 정보", expanded=False):
                         col1, col2, col3, col4, col5 = st.columns(5)
                         with col1:
@@ -796,28 +852,18 @@ def main():
                         with col5:
                             st.metric("AS열 정리", f"{as_cleaned:,}개")
         
-        # 분류 기준 정보
         with st.expander("💡 분류 기준 정보 보기", expanded=False):
             show_classification_info()
     
     with tab2:
         if st.session_state.processed_df is not None:
+            # 샘플 데이터 사용 중인 경우 알림
+            if st.session_state.get('is_sample_data', False):
+                st.warning("📊 **현재 샘플 데이터를 사용 중입니다.** 실제 데이터를 분석하려면 '파일 업로드 & 분류' 탭에서 파일을 업로드하세요.")
+            
             show_dashboard(st.session_state.processed_df)
         else:
             st.info("📁 먼저 **'파일 업로드 & 분류'** 탭에서 파일을 업로드하고 분류 작업을 완료해주세요.")
-            
-            st.markdown("""
-            ### 📊 대시보드에서 확인할 수 있는 정보
-            
-            **🗓️ 운영계약 기간 필터링**
-            - AR열(운영계약 시작일)과 AS열(운영계약 종료일) 기준
-            - 날짜 데이터 자동 정리 (00:00:00 제거, YYYY-MM-DD 형식)
-            
-            **📈 주요 지표, 모델별/권역별 현황**
-            - 인터랙티브 차트 및 상세 테이블
-            - 권역 × 모델 히트맵
-            - 다양한 형식의 데이터 다운로드
-            """)
 
 def show_classification_info():
     """분류 기준 정보를 표시하는 함수"""
@@ -873,13 +919,14 @@ def show_classification_info():
         
         region_data = {
             "권역명": ["수도권북서", "수도권북동", "수도권남동", "수도권남서", 
-                      "수도권남서(인천)", "강원권", "충청권", "경상권", "전라권", "기타"],
+                      "수도권남서(인천)", "수도권기타", "강원권", "충청권", "경상권", "전라권", "기타"],
             "주요 지역": [
                 "고양, 부천, 김포, 파주, 은평, 마포, 서대문, 양천, 강서",
                 "도봉, 노원, 중랑, 강북, 성북, 동대문, 의정부, 남양주, 구리",
                 "강남, 서초, 송파, 강동, 성남, 용인, 하남, 수원, 평택",
                 "구로, 금천, 영등포, 동작, 관악, 의왕, 광명, 안산, 안양",
                 "계양, 남동, 부평, 연수, 미추홀 등 인천 주요 구",
+                "경기도 내 특정 권역 미분류 지역",
                 "강원도 전역",
                 "충청, 충남, 충북, 세종, 대전",
                 "경상, 경남, 경북, 부산, 대구, 울산",
@@ -889,6 +936,13 @@ def show_classification_info():
         }
         
         st.dataframe(region_data, use_container_width=True, hide_index=True)
+        
+        st.success("""
+        **✨ 개선된 권역 분류:**
+        - **인천 우선 검사:** 인천 주소가 다른 권역으로 잘못 분류되는 것 방지
+        - **유연한 매칭:** "시/구" 없이도 지역명만으로 인식 (예: "의정부" = "의정부시")
+        - **수도권기타:** 경기도이지만 특정 권역에 속하지 않는 지역 명확히 분류
+        """)
     
     with subtab4:
         st.markdown("#### 📋 엑셀 열 참조 정보")
@@ -923,14 +977,6 @@ def show_classification_info():
             | **AR열 정리** | AR열 5행~ | YYYY-MM-DD 형식 |
             | **AS열 정리** | AS열 5행~ | YYYY-MM-DD 형식 |
             """)
-        
-        st.success("""
-        **✨ 날짜 정리 기능:**
-        - **AR열, AS열**의 "00:00:00" 같은 시간 부분 자동 제거
-        - **YYYY-MM-DD** 형식으로 통일
-        - 다양한 날짜 형식 자동 인식 (YYYY/MM/DD, YYYY.MM.DD 등)
-        - 엑셀 날짜 형식 지정으로 정렬 및 필터링 최적화
-        """)
 
 if __name__ == "__main__":
     main()
