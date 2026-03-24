@@ -3,3 +3,8 @@ openpyxl
 pandas
 plotly
 matplotlib
+pytz
+folium
+streamlit-folium
+pydeck
+geopy
