@@ -106,36 +106,60 @@ def parse_date_safe(date_value):
     return clean_and_parse_date(date_value)
 
 def classify_region(address):
-    """H열의 주소 데이터를 기반으로 권역을 분류하는 함수"""
+    """
+    H열의 주소 데이터를 기반으로 권역을 분류하는 함수
+    🔥 개선: 유연한 패턴 매칭 + 정확한 우선순위
+    """
     if not address:
         return "기타"
     
-    if re.search(r"서울|경기", address):
-        if re.search(r"고양시|부천시|김포시|파주시|은평구|마포구|서대문구|양천구|강서구|용산구|중구|종로구", address):
-            return "수도권북서"
-        elif re.search(r"도봉구|노원구|중랑구|강북구|성북구|동대문구|성동구|광진구|의정부시|남양주시|구리시|양주시|포천시|동두천시|가평군|연천군", address):
-            return "수도권북동"
-        elif re.search(r"강남구|서초구|송파구|강동구|성남시|용인시|하남시|광주시|안성시|수원시|평택시|오산시|이천시|여주시|양평군", address):
-            return "수도권남동"
-        elif re.search(r"구로구|금천구|영등포구|동작구|관악구|의왕시|광명시|군포시|과천시|시흥시|안산시|안양시|화성시", address):
-            return "수도권남서"
-        else:
-            return "수도권??"
-    elif re.search(r"인천", address):
-        if re.search(r"계양구|남동구|동구|미추홀구|부평구|연수구|서구|중구|강화군", address):
+    # 주소 전처리: 공백 정리
+    address_clean = str(address).strip()
+    
+    # 🔥 핵심 개선 1: 인천을 먼저 검사 (우선순위 조정)
+    if re.search(r"인천", address_clean):
+        # 인천 세부 구/군 검사
+        if re.search(r"계양|남동|동구|미추홀|부평|연수|서구|중구|강화", address_clean):
             return "수도권남서"
         else:
             return "인천??"
-    elif re.search(r"강원", address):
+    
+    # 서울/경기 검사 (인천 다음)
+    elif re.search(r"서울|경기", address_clean):
+        
+        # 🔥 핵심 개선 2: "시/구" 없이도 매칭되도록 패턴 수정
+        # 수도권북서
+        if re.search(r"고양|부천|김포|파주|은평구|마포구|서대문구|양천구|강서구|용산구|중구|종로구", address_clean):
+            return "수도권북서"
+        
+        # 수도권북동 (의정부, 남양주 등 "시" 없이도 매칭)
+        elif re.search(r"도봉구|노원구|중랑구|강북구|성북구|동대문구|성동구|광진구|의정부|남양주|구리|양주|포천|동두천|가평|연천", address_clean):
+            return "수도권북동"
+        
+        # 수도권남동
+        elif re.search(r"강남구|서초구|송파구|강동구|성남|용인|하남|광주|안성|수원|평택|오산|이천|여주|양평", address_clean):
+            return "수도권남동"
+        
+        # 수도권남서
+        elif re.search(r"구로구|금천구|영등포구|동작구|관악구|의왕|광명|군포|과천|시흥|안산|안양|화성", address_clean):
+            return "수도권남서"
+        
+        # 🔥 개선 3: 경기도 기타 지역 처리
+        else:
+            return "수도권기타"  # "수도권??" 대신 더 명확한 분류
+    
+    # 광역권 분류
+    elif re.search(r"강원", address_clean):
         return "강원권"
-    elif re.search(r"충청|충남|충북|세종|대전", address):
+    elif re.search(r"충청|충남|충북|세종|대전", address_clean):
         return "충청권"
-    elif re.search(r"경상|경남|경북|부산|대구|울산", address):
+    elif re.search(r"경상|경남|경북|부산|대구|울산", address_clean):
         return "경상권"
-    elif re.search(r"전라|전남|전북|광주", address):
+    elif re.search(r"전라|전남|전북|광주", address_clean):
         return "전라권"
     else:
         return "기타"
+
 
 def classify_model(row_data, row_num):
     """엑셀 IFS 수식을 파이썬 로직으로 변환한 모델 분류 함수"""
@@ -647,6 +671,19 @@ def show_dashboard(df):
     
     else:
         st.warning("⚠️ 유효한 운영계약 날짜 데이터가 없습니다. AR열과 AS열을 확인해주세요.")
+
+# 🔍 미분류 주소 디버깅 섹션
+    unknown_regions = filtered_df[
+        filtered_df['권역'].str.contains('??|기타', na=False)
+    ]
+    
+    if len(unknown_regions) > 0:
+        st.warning(f"⚠️ {len(unknown_regions)}개의 주소가 미분류되었습니다.")
+        with st.expander("🔍 미분류 주소 상세 보기"):
+            st.dataframe(
+                unknown_regions[['주소', '권역']].head(10),
+                use_container_width=True
+            )
 
 def main():
     # 세션 상태 초기화
