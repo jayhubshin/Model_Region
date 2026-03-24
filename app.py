@@ -555,7 +555,7 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
                 as_cleaned_count += 1
             
             # 🔥 좌표 데이터 수집 (AM열=경도, AN열=위도)
-            site_id = get_safe_value(row_data, 'E')  # E열을 사이트ID로 가정
+            site_id = get_safe_value(row_data, 'A')  # E열을 사이트ID로 가정
             longitude = row_data.get('AM')  # 경도
             latitude = row_data.get('AN')   # 위도
             
