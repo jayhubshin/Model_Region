@@ -9,6 +9,9 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import pytz
+import folium
+from streamlit_folium import st_folium
+from urllib.parse import quote
 
 # 페이지 설정
 st.set_page_config(
@@ -66,7 +69,7 @@ def clean_and_parse_date(date_value):
         date_formats = [
             '%Y-%m-%d', '%Y/%m/%d', '%Y.%m.%d', '%Y%m%d',
             '%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S',
-            '%d-%m-%Y', '%d/%m/%Y',
+            '%d-%m-%Y', '%d/%m/%d',
         ]
         
         for fmt in date_formats:
@@ -93,52 +96,32 @@ def format_date_for_excel(date_obj):
         return date_obj.strftime('%Y-%m-%d')
     return None
 
-def parse_date_safe(date_value):
-    """대시보드용 날짜 파싱"""
-    return clean_and_parse_date(date_value)
-
 def classify_region(address):
-    """
-    H열의 주소 데이터를 기반으로 권역을 분류하는 함수
-    🔥 개선: 유연한 패턴 매칭 + 정확한 우선순위
-    """
+    """H열의 주소 데이터를 기반으로 권역을 분류하는 함수"""
     if not address:
         return "기타"
     
-    # 주소 전처리: 공백 정리
     address_clean = str(address).strip()
     
-    # 🔥 핵심 개선 1: 인천을 먼저 검사 (우선순위 조정)
+    # 인천을 먼저 검사
     if re.search(r"인천", address_clean):
-        # 인천 세부 구/군 검사 ("구" 없이도 매칭)
         if re.search(r"계양|남동|동구|미추홀|부평|연수|서구|중구|강화", address_clean):
             return "수도권남서"
         else:
             return "인천??"
     
-    # 서울/경기 검사 (인천 다음)
+    # 서울/경기 검사
     elif re.search(r"서울|경기", address_clean):
-        
-        # 🔥 핵심 개선 2: "시/구" 없이도 매칭되도록 패턴 수정
-        # 수도권북서
         if re.search(r"고양|부천|김포|파주|은평구|마포구|서대문구|양천구|강서구|용산구|중구|종로구", address_clean):
             return "수도권북서"
-        
-        # 수도권북동 (의정부, 남양주 등 "시" 없이도 매칭)
         elif re.search(r"도봉구|노원구|중랑구|강북구|성북구|동대문구|성동구|광진구|의정부|남양주|구리|양주|포천|동두천|가평|연천", address_clean):
             return "수도권북동"
-        
-        # 수도권남동
         elif re.search(r"강남구|서초구|송파구|강동구|성남|용인|하남|광주|안성|수원|평택|오산|이천|여주|양평", address_clean):
             return "수도권남동"
-        
-        # 수도권남서
         elif re.search(r"구로구|금천구|영등포구|동작구|관악구|의왕|광명|군포|과천|시흥|안산|안양|화성", address_clean):
             return "수도권남서"
-        
-        # 🔥 개선 3: 경기도 기타 지역 처리
         else:
-            return "수도권기타"  # "수도권??" 대신 더 명확한 분류
+            return "수도권기타"
     
     # 광역권 분류
     elif re.search(r"강원", address_clean):
@@ -238,8 +221,9 @@ def classify_model(row_data, row_num):
         return "기타"
 
 def create_sample_data():
-    """🔥 핵심: 초기 샘플 데이터 생성 (30개)"""
+    """초기 샘플 데이터 생성 (30개) - 실제 좌표 포함"""
     sample_data = {
+        '사이트ID': [f'SITE_{i:03d}' for i in range(1, 21)] + [f'SITE_{i:03d}' for i in range(1, 11)],  # 일부 중복으로 그룹화 테스트
         '모델분류': [
             '급속스필_100', '급속PNE_100', '신형대', '알박신형', '구형대',
             '급속SK_100', 'F01', '스필_7kW', '급속그린파워_100', 'PNE_7kW',
@@ -253,16 +237,32 @@ def create_sample_data():
             '수도권남서', '강원권', '수도권북서', '전라권', '수도권남동',
             '수도권북동', '충청권', '수도권남서', '경상권', '강원권',
             '수도권북서', '전라권', '수도권남동', '수도권북동', '충청권',
-            '수도권남서', '경상권', '강원권', '수도권북서', '전라권',
-            '수도권남동', '수도권북동', '충청권', '수도권남서', '경상권'
+            '수도권북서', '수도권남동', '경상권', '강원권', '수도권북서',
+            '전라권', '수도권남동', '수도권북동', '충청권', '수도권남서'
         ],
         '주소': [
-            '서울특별시 강서구', '경기도 성남시', '경기도 의정부 상금로 36', '대전광역시 유성구', '부산광역시 해운대구',
-            '인천광역시 계양구 안남로 560', '강원도 춘천시', '서울특별시 마포구', '광주광역시 서구', '경기도 용인시',
-            '서울특별시 강북구', '충청남도 천안시', '인천광역시 계양구 봉오대로744번길', '대구광역시 달서구', '강원도 원주시',
-            '서울특별시 은평구', '전라북도 전주시', '경기도 수원시', '서울특별시 중랑구', '세종특별자치시',
-            '서울특별시 관악구', '울산광역시 남구', '강원도 강릉시', '서울특별시 양천구', '전라남도 목포시',
-            '경기도 성남시', '서울특별시 성북구', '충청북도 청주시', '서울특별시 금천구', '경상남도 창원시'
+            '서울특별시 강서구 공항대로 지하 396', '경기도 성남시 분당구 판교역로 166', '경기도 의정부시 상금로 36', '대전광역시 유성구 대학로 99', '부산광역시 해운대구 센텀중앙로 79',
+            '인천광역시 계양구 안남로 560', '강원도 춘천시 중앙로 1', '서울특별시 마포구 월드컵북로 396', '광주광역시 서구 상무민주로 61', '경기도 용인시 수지구 포은대로 435',
+            '서울특별시 강북구 4.19로 100', '충청남도 천안시 동남구 병천면 충절로 1600', '인천광역시 계양구 봉오대로744번길 7', '대구광역시 달서구 달구벌대로 1095', '강원도 원주시 세계로 123',
+            '서울특별시 은평구 통일로 684', '전라북도 전주시 완산구 효자로 225', '경기도 수원시 팔달구 중부대로 120', '서울특별시 중랑구 망우로 379', '세종특별자치시 한누리대로 2130',
+            '서울특별시 강서구 공항대로 지하 396', '경기도 성남시 분당구 판교역로 166', '울산광역시 남구 삼산로 282', '강원도 강릉시 경강로 2021', '서울특별시 양천구 목동서로 159',
+            '전라남도 목포시 평화로 32', '경기도 성남시 중원구 사기막골로 45번길 14', '서울특별시 성북구 정릉로 77', '충청북도 청주시 상당구 상당로 82', '경상남도 창원시 의창구 중앙대로 151'
+        ],
+        '위도': [
+            37.5583, 37.3945, 37.7388, 36.3704, 35.1681,
+            37.5376, 37.8813, 37.5665, 35.1595, 37.3217,
+            37.6398, 36.5760, 37.5420, 35.8285, 37.3422,
+            37.6176, 35.8242, 37.2636, 37.5985, 36.4801,
+            37.5583, 37.3945, 35.5384, 37.7519, 37.5172,
+            34.7943, 37.4201, 37.5894, 36.6424, 35.2272
+        ],
+        '경도': [
+            126.7944, 127.1116, 127.0467, 127.3622, 129.1303,
+            126.7253, 127.7298, 126.9018, 126.8526, 127.1085,
+            127.0253, 127.1472, 126.7389, 128.5658, 127.9202,
+            126.9227, 127.1530, 127.0286, 127.0927, 127.2890,
+            126.7944, 127.1116, 129.3114, 128.8761, 126.8664,
+            126.3822, 127.1266, 127.0167, 127.4890, 128.6811
         ],
         '운영계약시작일': [
             date(2022, 1, 15), date(2022, 3, 20), date(2022, 5, 10), date(2022, 7, 5), date(2022, 9, 1),
@@ -291,6 +291,184 @@ def create_sample_data():
     
     return df
 
+def create_charger_map(filtered_df):
+    """
+    🗺️ 핵심 기능: 사이트ID로 그룹화된 충전기 지도 생성
+    - AM열(경도), AN열(위도) 사용
+    - 사이트ID별 1개 마커 표시
+    - 마우스 오버: 간단 정보
+    - 클릭: 상세 정보 + 네이버 지도 링크
+    """
+    # 유효한 좌표가 있는 데이터만 사용
+    map_data = filtered_df.dropna(subset=['위도', '경도']).copy()
+    
+    if len(map_data) == 0:
+        return None, "좌표 데이터가 없습니다. AM열(경도), AN열(위도)를 확인해주세요."
+    
+    # 사이트ID가 없는 경우 주소 기반으로 임시 생성
+    if '사이트ID' not in map_data.columns or map_data['사이트ID'].isna().all():
+        map_data['사이트ID'] = [f'SITE_{i:04d}' for i in range(len(map_data))]
+    
+    # 🔥 핵심: 사이트ID로 그룹화 (같은 사이트의 여러 충전기를 1개 마커로)
+    grouped = map_data.groupby('사이트ID').agg({
+        '위도': 'first',
+        '경도': 'first',
+        '주소': 'first',
+        '권역': 'first',
+        '모델분류': lambda x: list(x),  # 모든 모델을 리스트로 수집
+        '운영계약시작일': 'first',
+        '운영계약종료일': 'first'
+    }).reset_index()
+    
+    # 각 사이트의 충전기 개수 및 급속/완속 비율 계산
+    charger_counts = map_data.groupby('사이트ID').agg({
+        '모델분류': ['count', lambda x: sum('급속' in str(model) for model in x)]
+    }).reset_index()
+    
+    charger_counts.columns = ['사이트ID', '총충전기수', '급속충전기수']
+    charger_counts['완속충전기수'] = charger_counts['총충전기수'] - charger_counts['급속충전기수']
+    
+    # 데이터 병합
+    grouped = grouped.merge(charger_counts, on='사이트ID')
+    
+    # 지도 중심점 계산
+    center_lat = grouped['위도'].mean()
+    center_lon = grouped['경도'].mean()
+    
+    # Folium 지도 생성
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=8,
+        tiles='OpenStreetMap'
+    )
+    
+    # 마커 클러스터링 추가
+    from folium.plugins import MarkerCluster
+    marker_cluster = MarkerCluster(
+        name="충전소 클러스터",
+        overlay=True,
+        control=True,
+        options={
+            "disableClusteringAtZoom": 15,
+            "maxClusterRadius": 50
+        }
+    ).add_to(m)
+    
+    # 권역별 색상 매핑
+    region_colors = {
+        '수도권북서': 'blue', '수도권북동': 'green', '수도권남동': 'red', '수도권남서': 'purple',
+        '수도권기타': 'cadetblue', '인천??': 'orange', '강원권': 'lightblue', '충청권': 'lightgreen',
+        '경상권': 'pink', '전라권': 'lightgray', '기타': 'gray'
+    }
+    
+    # 각 사이트별 마커 추가
+    for idx, row in grouped.iterrows():
+        site_id = row['사이트ID']
+        address = row['주소']
+        total_chargers = row['총충전기수']
+        fast_chargers = row['급속충전기수']
+        slow_chargers = row['완속충전기수']
+        models = row['모델분류']
+        region = row['권역']
+        
+        # 🔥 네이버 지도 URL 생성 (주소 + " 전기차")
+        encoded_address = quote(f"{address} 전기차")
+        naver_map_url = f"https://map.naver.com/p/search/{encoded_address}"
+        
+        # 아이콘 설정 (급속 충전기가 있으면 번개, 없으면 플러그)
+        icon_name = 'flash' if fast_chargers > 0 else 'plug'
+        color = region_colors.get(region, 'gray')
+        
+        # 🎯 마우스 오버 툴팁 (간단한 정보)
+        tooltip_text = f"{site_id} | {total_chargers}기 | {region}"
+        
+        # 🎯 클릭 시 팝업 (상세 정보 + 네이버 지도 링크)
+        models_text = ', '.join(set([str(m) for m in models]))  # 중복 제거
+        
+        popup_html = f"""
+        <div style="width: 320px; font-family: 'Malgun Gothic', Arial, sans-serif;">
+            <h4 style="margin: 0 0 12px 0; color: #333; border-bottom: 3px solid {color}; padding-bottom: 8px; font-size: 16px;">
+                🏢 {site_id}
+            </h4>
+            <table style="width: 100%; font-size: 13px; border-collapse: collapse; margin-bottom: 12px;">
+                <tr style="background-color: #f8f9fa;">
+                    <td style="padding: 6px; font-weight: bold; width: 80px;">총 충전기</td>
+                    <td style="padding: 6px; color: #0066cc; font-weight: bold;">{total_chargers}대</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px; font-weight: bold;">급속/완속</td>
+                    <td style="padding: 6px;">⚡ {fast_chargers}대 / 🔌 {slow_chargers}대</td>
+                </tr>
+                <tr style="background-color: #f8f9fa;">
+                    <td style="padding: 6px; font-weight: bold;">권역</td>
+                    <td style="padding: 6px;">{region}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px; font-weight: bold;">주소</td>
+                    <td style="padding: 6px; font-size: 11px; line-height: 1.3;">{address}</td>
+                </tr>
+                <tr style="background-color: #f8f9fa;">
+                    <td style="padding: 6px; font-weight: bold;">모델</td>
+                    <td style="padding: 6px; font-size: 11px; line-height: 1.3;">{models_text}</td>
+                </tr>
+            </table>
+            <div style="text-align: center; margin-top: 15px;">
+                <a href="{naver_map_url}" target="_blank" style="
+                    display: inline-block;
+                    padding: 10px 20px;
+                    background: linear-gradient(135deg, #03C75A 0%, #029B47 100%);
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 8px;
+                    font-weight: bold;
+                    font-size: 13px;
+                    box-shadow: 0 3px 8px rgba(3, 199, 90, 0.3);
+                    transition: all 0.2s ease;
+                ">
+                    📍 네이버 지도에서 보기 ↗
+                </a>
+            </div>
+        </div>
+        """
+        
+        # 마커 추가
+        folium.Marker(
+            location=[row['위도'], row['경도']],
+            popup=folium.Popup(popup_html, max_width=350),
+            tooltip=tooltip_text,
+            icon=folium.Icon(
+                color=color,
+                icon=icon_name,
+                prefix='fa'
+            )
+        ).add_to(marker_cluster)
+    
+    # 🎨 범례 추가
+    legend_html = f'''
+    <div style="position: fixed; bottom: 50px; right: 50px; border: 2px solid grey; 
+                z-index: 9999; background-color: white; padding: 15px; font-size: 12px;
+                border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-family: Arial;">
+        <p style="margin: 0 0 10px 0; font-weight: bold; font-size: 14px; color: #333;">🗺️ 지도 범례</p>
+        <p style="margin: 5px 0;"><i class="fa fa-flash" style="color: red;"></i> 급속 충전기 포함 사이트</p>
+        <p style="margin: 5px 0;"><i class="fa fa-plug" style="color: blue;"></i> 완속 충전기만 있는 사이트</p>
+        <hr style="margin: 8px 0;">
+        <p style="margin: 5px 0; font-weight: bold;">총 사이트: {len(grouped):,}개</p>
+        <p style="margin: 5px 0; font-weight: bold;">총 충전기: {len(map_data):,}대</p>
+        <hr style="margin: 8px 0;">
+        <p style="margin: 2px 0; font-size: 11px; color: #666;">권역별 색상:</p>
+    '''
+    
+    # 권역별 색상 정보 추가
+    for region, color in region_colors.items():
+        if region in grouped['권역'].values:
+            site_count = len(grouped[grouped['권역'] == region])
+            legend_html += f'<p style="margin: 1px 0; font-size: 10px;"><span style="color: {color}; font-size: 14px;">●</span> {region} ({site_count}개)</p>'
+    
+    legend_html += '</div>'
+    m.get_root().html.add_child(folium.Element(legend_html))
+    
+    return m, None
+
 def process_excel_file_with_progress(file_bytes, title_container, progress_bar, status_text):
     """실시간 타이머와 함께 엑셀 파일을 처리하고 대시보드용 DataFrame 생성"""
     try:
@@ -309,6 +487,8 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
         # 열 번호 정의
         AR_COLUMN = 44  # 운영계약 시작일
         AS_COLUMN = 45  # 운영계약 종료일
+        AM_COLUMN = 39  # 경도
+        AN_COLUMN = 40  # 위도
         BA_COLUMN = 53  # 모델분류
         BB_COLUMN = 54  # 권역
         
@@ -375,10 +555,29 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
                 ws.cell(row=row_num, column=AS_COLUMN).number_format = 'YYYY-MM-DD'
                 as_cleaned_count += 1
             
+            # 🔥 좌표 데이터 수집 (AM열=경도, AN열=위도)
+            site_id = get_safe_value(row_data, 'E')  # E열을 사이트ID로 가정 (수정 가능)
+            longitude = row_data.get('AM')  # 경도
+            latitude = row_data.get('AN')   # 위도
+            
+            # 숫자로 변환 시도
+            try:
+                longitude = float(longitude) if longitude else None
+            except:
+                longitude = None
+            
+            try:
+                latitude = float(latitude) if latitude else None
+            except:
+                latitude = None
+            
             dashboard_data.append({
+                '사이트ID': site_id if site_id else f'AUTO_{row_num}',
                 '모델분류': classification_result,
                 '권역': region_result,
                 '주소': address,
+                '위도': latitude,
+                '경도': longitude,
                 '운영계약시작일': ar_value,
                 '운영계약종료일': as_value,
                 '운영계약시작일_cleaned': ar_cleaned,
@@ -465,11 +664,10 @@ def show_dashboard(df):
         min_date = valid_dates['운영계약시작일_parsed'].min()
         max_date = valid_dates['운영계약종료일_parsed'].max()
         
-        # 🔥 핵심 수정: 안전한 기본값 계산
+        # 안전한 기본값 계산
         default_start = max(min_date, date(2022, 1, 1))
         default_end = min(max_date, date(2028, 1, 1))
         
-        # 추가 안전장치: 논리적 일관성 보장
         if default_start > default_end:
             default_start = min_date
             default_end = max_date
@@ -527,8 +725,8 @@ def show_dashboard(df):
             st.metric("총 충전기 수", f"{total_chargers:,}대")
         
         with kpi_col2:
-            model_count = filtered_df['모델분류'].nunique()
-            st.metric("모델 종류", f"{model_count}개")
+            unique_sites = filtered_df['사이트ID'].nunique() if '사이트ID' in filtered_df.columns else 0
+            st.metric("사이트 수", f"{unique_sites:,}개")
         
         with kpi_col3:
             region_count = filtered_df['권역'].nunique()
@@ -538,6 +736,69 @@ def show_dashboard(df):
             fast_chargers = len(filtered_df[filtered_df['모델분류'].str.contains('급속', na=False)])
             fast_ratio = (fast_chargers / total_chargers * 100) if total_chargers > 0 else 0
             st.metric("급속 충전기", f"{fast_chargers:,}대", f"{fast_ratio:.1f}%")
+        
+        st.markdown("---")
+        
+        # 🗺️ 지도 시각화 (최상단 배치)
+        st.markdown("### 🗺️ 충전기 위치 지도 (사이트ID 기준)")
+        
+        # 좌표 데이터 확인
+        has_coordinates = '위도' in filtered_df.columns and '경도' in filtered_df.columns
+        
+        if has_coordinates:
+            valid_coords = filtered_df.dropna(subset=['위도', '경도'])
+            coord_count = len(valid_coords)
+            
+            if coord_count > 0:
+                # 사이트 수 계산
+                unique_sites = valid_coords['사이트ID'].nunique() if '사이트ID' in valid_coords.columns else coord_count
+                
+                st.success(f"✅ {unique_sites:,}개 사이트, {coord_count:,}개 충전기의 좌표 데이터가 있습니다.")
+                
+                # 지도 생성
+                charger_map, error = create_charger_map(filtered_df)
+                
+                if error:
+                    st.error(f"❌ {error}")
+                else:
+                    st_folium(charger_map, width=1400, height=700)
+                    
+                    # 지도 통계
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("지도 표시 사이트", f"{unique_sites:,}개")
+                    with col2:
+                        st.metric("지도 표시 충전기", f"{coord_count:,}대")
+                    with col3:
+                        coord_ratio = (coord_count / len(filtered_df) * 100) if len(filtered_df) > 0 else 0
+                        st.metric("좌표 보유율", f"{coord_ratio:.1f}%")
+                    with col4:
+                        missing_coords = len(filtered_df) - coord_count
+                        st.metric("좌표 누락", f"{missing_coords:,}대")
+                    
+                    # 사용법 안내
+                    with st.expander("🎮 지도 사용 방법"):
+                        st.markdown("""
+                        **지도 조작:**
+                        - **확대/축소:** 마우스 휠 또는 +/- 버튼
+                        - **이동:** 드래그
+                        - **클러스터:** 숫자 표시된 원 클릭 시 해당 영역 확대
+                        
+                        **마커 기능:**
+                        - 🖱️ **마우스 오버:** 사이트ID, 충전기 수, 권역 간단 정보
+                        - 🖱️ **클릭:** 상세 정보 팝업 + 네이버 지도 링크
+                        - 📍 **네이버 지도 버튼:** 클릭 시 새 창에서 해당 위치의 전기차 충전소 검색
+                        
+                        **시각화 정보:**
+                        - ⚡ **빨간 번개:** 급속 충전기 포함 사이트
+                        - 🔌 **파란 플러그:** 완속 충전기만 있는 사이트
+                        - 🎨 **색상:** 권역별 구분 (범례 참조)
+                        - 📊 **그룹화:** 같은 사이트ID는 1개 마커로 표시
+                        """)
+            else:
+                st.warning("⚠️ 좌표 데이터가 없습니다. AM열(경도), AN열(위도)를 확인해주세요.")
+        else:
+            st.warning("⚠️ 좌표 데이터가 없습니다. AM열(경도), AN열(위도)를 엑셀 파일에 추가해주세요.")
         
         st.markdown("---")
         
@@ -680,6 +941,7 @@ def show_dashboard(df):
 
 📅 분석 기간: {start_date} ~ {end_date}
 📊 총 충전기 수: {total_chargers:,}대
+🏢 총 사이트 수: {unique_sites:,}개
 🔢 모델 종류: {model_count}개
 🗺️ 권역 수: {region_count}개
 ⚡ 급속 충전기: {fast_chargers:,}대 ({fast_ratio:.1f}%)
@@ -732,7 +994,7 @@ def show_dashboard(df):
                 )
                 
                 st.markdown("**상세 주소 목록 (최대 10개):**")
-                display_cols = ['주소', '권역', '모델분류']
+                display_cols = ['주소', '권역', '모델분류', '사이트ID']
                 available_cols = [col for col in display_cols if col in unknown_regions.columns]
                 
                 st.dataframe(
@@ -749,9 +1011,8 @@ def show_dashboard(df):
     else:
         st.warning("⚠️ 유효한 운영계약 날짜 데이터가 없습니다. AR열과 AS열을 확인해주세요.")
 
-
 def main():
-    # 🔥 핵심: 세션 상태 초기화 시 샘플 데이터 자동 로드
+    # 세션 상태 초기화 시 샘플 데이터 자동 로드
     if 'processed_df' not in st.session_state:
         st.session_state.processed_df = create_sample_data()
         st.session_state.is_sample_data = True
@@ -762,7 +1023,7 @@ def main():
     st.title("⚡ 충전기 모델분류 & 운영현황 대시보드")
     st.markdown("""
     엑셀 파일을 업로드하면 **BA열**에 "모델분류", **BB열**에 "권역"을 자동으로 추가하고,  
-    **AR열/AS열**의 날짜 데이터를 정리하여 운영 현황을 분석할 수 있습니다.
+    **AR열/AS열**의 날짜 데이터를 정리하여 **AM열(경도)/AN열(위도)** 기반으로 지도에서 충전기 위치를 확인할 수 있습니다.
     """)
     
     # 탭 구성
@@ -771,12 +1032,12 @@ def main():
     with tab1:
         # 샘플 데이터 안내
         if st.session_state.get('is_sample_data', False):
-            st.info("💡 **현재 샘플 데이터가 로드되어 있습니다.** '운영현황 대시보드' 탭에서 바로 기능을 체험해보세요!")
+            st.info("💡 **현재 샘플 데이터가 로드되어 있습니다.** '운영현황 대시보드' 탭에서 바로 지도 기능을 체험해보세요!")
         
         uploaded_file = st.file_uploader(
             "📁 엑셀 파일을 선택하세요",
             type=['xlsx', 'xls'],
-            help="최대 200MB까지 업로드 가능합니다."
+            help="AM열(경도), AN열(위도), 사이트ID가 포함된 파일을 권장합니다. 최대 200MB"
         )
         
         if uploaded_file is not None:
@@ -813,7 +1074,7 @@ def main():
                 if error:
                     st.error(f"❌ {error}")
                 else:
-                    # 🔥 샘플 데이터 플래그 제거
+                    # 샘플 데이터 플래그 제거
                     st.session_state.processed_df = df
                     st.session_state.processed_file = processed_file
                     st.session_state.is_sample_data = False
@@ -828,7 +1089,7 @@ def main():
                         f"AS열(운영계약종료일) `{as_cleaned:,}개` - 시간 부분(00:00:00) 제거 및 YYYY-MM-DD 형식으로 변환"
                     )
                     
-                    # 🔥 한국 시간 적용
+                    # 한국 시간 적용
                     korea_time = get_korea_time()
                     timestamp = korea_time.strftime("%Y%m%d_%H%M%S")
                     download_name = f"모델분류_결과_{timestamp}.xlsx"
@@ -844,7 +1105,7 @@ def main():
                             type="primary"
                         )
                     
-                    st.info("💡 **'운영현황 대시보드'** 탭으로 이동하여 데이터를 분석해보세요!")
+                    st.info("💡 **'운영현황 대시보드'** 탭으로 이동하여 지도와 데이터를 분석해보세요!")
                     
                     with st.expander("📋 처리 결과 상세 정보", expanded=False):
                         col1, col2, col3, col4, col5 = st.columns(5)
@@ -944,13 +1205,6 @@ def show_classification_info():
         }
         
         st.dataframe(region_data, use_container_width=True, hide_index=True)
-        
-        st.success("""
-        **✨ 개선된 권역 분류:**
-        - **인천 우선 검사:** 인천 주소가 다른 권역으로 잘못 분류되는 것 방지
-        - **유연한 매칭:** "시/구" 없이도 지역명만으로 인식 (예: "의정부" = "의정부시")
-        - **수도권기타:** 경기도이지만 특정 권역에 속하지 않는 지역 명확히 분류
-        """)
     
     with subtab4:
         st.markdown("#### 📋 엑셀 열 참조 정보")
@@ -963,11 +1217,14 @@ def show_classification_info():
             
             | 열 이름 | 열 번호 | 용도 |
             |---------|---------|------|
+            | **E열** | 5번째 | 사이트ID (지도 그룹화) 🔧 |
             | **H열** | 8번째 | 주소 (권역 분류) |
             | **AD열** | 30번째 | 모델명/설명 검색 |
             | **AG열** | 33번째 | 모델 코드 (주요 기준) |
             | **AH열** | 34번째 | 급속/완속 구분 |
             | **AJ열** | 36번째 | 용량 정보 (kW) |
+            | **AM열** | 39번째 | 경도 (Longitude) 🗺️ |
+            | **AN열** | 40번째 | 위도 (Latitude) 🗺️ |
             | **AR열** | 44번째 | 운영계약 시작일 ✨정리 |
             | **AS열** | 45번째 | 운영계약 종료일 ✨정리 |
             """)
@@ -985,6 +1242,28 @@ def show_classification_info():
             | **AR열 정리** | AR열 5행~ | YYYY-MM-DD 형식 |
             | **AS열 정리** | AS열 5행~ | YYYY-MM-DD 형식 |
             """)
+        
+        st.success("""
+        **🗺️ 지도 기능:**
+        - **AM열(경도), AN열(위도)** 좌표로 정확한 위치 표시
+        - **사이트ID(E열)** 기준으로 같은 위치 충전기 그룹화
+        - **마우스 오버:** 사이트ID, 충전기 수, 권역 정보
+        - **클릭:** 상세 정보 + 네이버 지도 링크
+        - **네이버 지도:** "주소 + 전기차" 검색으로 새 창 열기
+        """)
+        
+        st.warning("""
+        **🔧 사이트ID 열 위치 수정 방법:**
+        
+        현재 코드는 **E열(5번째)**을 사이트ID로 가정하고 있습니다. 
+        만약 사이트ID가 다른 열에 있다면, `process_excel_file_with_progress` 함수에서 
+        `get_safe_value(row_data, 'E')` 부분을 해당 열로 변경하세요.
+        
+        **예시:**
+        - A열: `get_safe_value(row_data, 'A')`
+        - B열: `get_safe_value(row_data, 'B')`
+        - AI열: `get_safe_value(row_data, 'AI')`
+        """)
 
 if __name__ == "__main__":
     main()
