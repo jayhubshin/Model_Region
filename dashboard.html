@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>충전기 모델분류 & 운영현황 대시보드</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+<style>
+:root {
+    --primary: #1a73e8;
+    --primary-dark: #0d47a1;
+    --success: #34a853;
+    --bg: #f0f2f5;
+    --card: #ffffff;
+    --text: #333333;
+    --text-light: #666666;
+    --border: #e0e0e0;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Segoe UI','Malgun Gothic',sans-serif; background:var(--bg); color:var(--text); }
+
+/* Header */
+.header {
+    background:linear-gradient(135deg,var(--primary),var(--primary-dark));
+    color:white; padding:14px 24px; display:flex; align-items:center; gap:12px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.2); position:sticky; top:0; z-index:1000;
+}
+.header h1 { font-size:20px; font-weight:600; }
+
+/* Tabs */
+.tab-bar { background:white; border-bottom:2px solid var(--border); display:flex; padding:0 24px; }
+.tab-btn {
+    padding:12px 24px; cursor:pointer; font-size:14px; font-weight:600;
+    border:none; background:none; color:var(--text-light); border-bottom:3px solid transparent;
+    transition:all 0.2s;
+}
+.tab-btn:hover { color:var(--primary); }
+.tab-btn.active { color:var(--primary); border-bottom-color:var(--primary); }
+.tab-content { display:none; padding:16px 24px; }
+.tab-content.active { display:block; }
+
+/* Filters */
+.filters {
+    background:white; padding:12px 20px; border-radius:10px; margin-bottom:16px;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    box-shadow:0 1px 4px rgba(0,0,0,0.08);
+}
+.filters label { font-weight:600; font-size:13px; white-space:nowrap; }
+.filters input, .filters select {
+    padding:7px 12px; border:1px solid var(--border); border-radius:6px; font-size:13px;
+}
+.btn {
+    padding:8px 22px; background:var(--primary); color:white; border:none;
+    border-radius:6px; cursor:pointer; font-weight:600; font-size:13px; transition:background 0.2s;
+}
+.btn:hover { background:var(--primary-dark); }
+.btn-success { background:var(--success); }
+.btn-success:hover { background:#2d8e47; }
+
+/* KPI */
+.kpi-row {
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:12px; margin-bottom:16px;
+}
+.kpi-card {
+    background:white; border-radius:10px; padding:16px; text-align:center;
+    box-shadow:0 1px 4px rgba(0,0,0,0.08); border-left:4px solid var(--primary);
+}
+.kpi-card .value { font-size:26px; font-weight:700; color:var(--primary); }
+.kpi-card .label { font-size:12px; color:var(--text-light); margin-top:2px; }
+.kpi-card .sub { font-size:11px; color:var(--success); margin-top:2px; }
+
+/* Layout */
+.grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+.grid-full { margin-bottom:16px; }
+.panel {
+    background:white; border-radius:10px; padding:16px;
+    box-shadow:0 1px 4px rgba(0,0,0,0.08);
+}
+.panel h3 {
+    font-size:15px; margin-bottom:12px; color:var(--text);
+    border-bottom:2px solid var(--primary); padding-bottom:6px;
+}
+
+#map { height:550px; border-radius:8px; }
+.chart-box { position:relative; height:350px; }
+.info-bar {
+    background:#e8f0fe; padding:10px 16px; border-radius:8px; margin-bottom:12px;
+    font-size:13px; color:var(--primary-dark);
+}
+.warn-bar {
+    background:#fff3cd; padding:10px 16px; border-radius:8px; margin-bottom:12px;
+    font-size:13px; color:#856404;
+}
+.success-bar {
+    background:#d4edda; padding:10px 16px; border-radius:8px; margin-bottom:12px;
+    font-size:13px; color:#155724;
+}
+
+/* Table */
+.data-table { width:100%; border-collapse:collapse; font-size:12px; }
+.data-table th { background:#f8f9fa; padding:8px; text-align:left; border-bottom:2px solid var(--border); position:sticky; top:0; }
+.data-table td { padding:6px 8px; border-bottom:1px solid #eee; }
+.data-table tr:hover { background:#f0f7ff; }
+.table-wrap { max-height:400px; overflow:auto; border:1px solid var(--border); border-radius:8px; }
+
+/* Download */
+.dl-row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+
+/* Quality */
+.quality-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+
+.status-bar {
+    padding:8px 24px; font-size:11px; color:var(--text-light); text-align:right;
+    border-top:1px solid var(--border); background:white;
+}
+
+/* Classification info */
+.cls-tabs { display:flex; gap:8px; margin-bottom:12px; }
+.cls-tab-btn {
+    padding:6px 16px; font-size:12px; border:1px solid var(--border); border-radius:6px;
+    cursor:pointer; background:white; transition:all 0.2s;
+}
+.cls-tab-btn.active { background:var(--primary); color:white; border-color:var(--primary); }
+.cls-content { display:none; }
+.cls-content.active { display:block; }
+
+/* Upload area */
+.upload-area {
+    border:2px dashed var(--border); border-radius:10px; padding:40px; text-align:center;
+    background:#fafbfc; margin-bottom:16px; cursor:pointer; transition:border-color 0.2s;
+}
+.upload-area:hover { border-color:var(--primary); }
+.upload-area.dragover { border-color:var(--primary); background:#e8f0fe; }
+
+.hidden-input { display:none; }
+
+@media(max-width:900px) {
+    .grid-2 { grid-template-columns:1fr; }
+    .kpi-row { grid-template-columns:repeat(2,1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<div class="header">
+    <span style="font-size:28px">⚡</span>
+    <h1>충전기 모델분류 & 운영현황 대시보드</h1>
+</div>
+
+<!-- ═══ TABS ═══ -->
+<div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('upload')">파일 업로드 & 분류</button>
+    <button class="tab-btn" onclick="switchTab('dashboard')">운영현황 대시보드</button>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- TAB 1: UPLOAD -->
+<!-- ═══════════════════════════════════════ -->
+<div id="tab-upload" class="tab-content active">
+    <div id="loadStatusUpload" class="info-bar">데이터 로딩 중...</div>
+
+    <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+        <input type="file" id="fileInput" class="hidden-input" accept=".xlsx,.xls,.json,.csv">
+        <p style="font-size:16px;font-weight:600;margin-bottom:8px">📁 엑셀/JSON 파일을 선택하거나 드래그하세요</p>
+        <p style="font-size:13px;color:#888">지원 형식: .xlsx, .xls, .json, .csv</p>
+    </div>
+    <div id="uploadResult" style="display:none"></div>
+
+    <!-- Classification Info -->
+    <div class="panel" style="margin-top:16px">
+        <h3>분류 기준표</h3>
+        <div class="cls-tabs">
+            <button class="cls-tab-btn active" onclick="switchClsTab('fast')">급속 충전기</button>
+            <button class="cls-tab-btn" onclick="switchClsTab('slow')">완속 충전기</button>
+            <button class="cls-tab-btn" onclick="switchClsTab('region')">권역 분류</button>
+        </div>
+        <div id="cls-fast" class="cls-content active">
+            <div class="info-bar">AH열 = '급속'일 때</div>
+            <div class="table-wrap">
+                <table class="data-table" id="fastTable"></table>
+            </div>
+        </div>
+        <div id="cls-slow" class="cls-content">
+            <div class="info-bar">AH열 ≠ '급속'일 때</div>
+            <div class="table-wrap">
+                <table class="data-table" id="slowTable"></table>
+            </div>
+        </div>
+        <div id="cls-region" class="cls-content">
+            <div class="table-wrap">
+                <table class="data-table" id="regionTable"></table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- TAB 2: DASHBOARD -->
+<!-- ═══════════════════════════════════════ -->
+<div id="tab-dashboard" class="tab-content">
+
+    <!-- Filters -->
+    <div class="filters">
+        <label>계약시작일:</label>
+        <input type="date" id="startDate" value="2022-01-01">
+        <label>계약종료일:</label>
+        <input type="date" id="endDate" value="2028-01-01">
+        <label>권역:</label>
+        <select id="regionFilter"><option value="all">전체</option></select>
+        <label>모델:</label>
+        <select id="modelFilter"><option value="all">전체</option></select>
+        <button class="btn" onclick="applyFilters()">필터 적용</button>
+        <span id="filterInfo" style="font-size:12px;color:#888;margin-left:auto"></span>
+    </div>
+
+    <!-- KPI -->
+    <div class="kpi-row">
+        <div class="kpi-card"><div class="value" id="kTotal">-</div><div class="label">총 충전기</div></div>
+        <div class="kpi-card"><div class="value" id="kSites">-</div><div class="label">사이트 수</div></div>
+        <div class="kpi-card"><div class="value" id="kRegions">-</div><div class="label">권역 수</div></div>
+        <div class="kpi-card">
+            <div class="value" id="kFast">-</div><div class="label">급속 충전기</div>
+            <div class="sub" id="kFastPct"></div>
+        </div>
+        <div class="kpi-card"><div class="value" id="kSlow">-</div><div class="label">완속 충전기</div></div>
+    </div>
+
+    <!-- Map -->
+    <div class="grid-full">
+        <div class="panel">
+            <h3>충전기 위치 지도 (사이트 기준)</h3>
+            <div id="mapInfo" class="success-bar" style="display:none"></div>
+            <div id="map"></div>
+            <div class="kpi-row" style="margin-top:12px">
+                <div class="kpi-card"><div class="value" id="kMapSites">-</div><div class="label">지도 사이트</div></div>
+                <div class="kpi-card"><div class="value" id="kMapChargers">-</div><div class="label">지도 충전기</div></div>
+                <div class="kpi-card"><div class="value" id="kCoordRate">-</div><div class="label">좌표 보유율</div></div>
+                <div class="kpi-card"><div class="value" id="kMissing">-</div><div class="label">좌표 누락</div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="grid-2">
+        <div class="panel">
+            <h3>모델별 충전기 수량 (상위 15)</h3>
+            <div class="chart-box"><canvas id="modelChart"></canvas></div>
+        </div>
+        <div class="panel">
+            <h3>모델별 수량 상세</h3>
+            <div class="table-wrap" style="max-height:350px">
+                <table class="data-table" id="modelTable"></table>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid-2">
+        <div class="panel">
+            <h3>권역별 충전기 비율</h3>
+            <div class="chart-box"><canvas id="regionPieChart"></canvas></div>
+        </div>
+        <div class="panel">
+            <h3>권역별 충전기 수량</h3>
+            <div class="chart-box"><canvas id="regionBarChart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Heatmap -->
+    <div class="grid-full">
+        <div class="panel">
+            <h3>권역별 모델 분포 히트맵</h3>
+            <div class="table-wrap" id="heatmapWrap"></div>
+        </div>
+    </div>
+
+    <!-- Pivot Table -->
+    <div class="grid-full">
+        <div class="panel">
+            <h3>권역별 × 모델별 상세 현황</h3>
+            <div class="table-wrap"><table class="data-table" id="pivotTable"></table></div>
+        </div>
+    </div>
+
+    <!-- Download -->
+    <div class="grid-full">
+        <div class="panel">
+            <h3>데이터 다운로드</h3>
+            <div class="dl-row">
+                <button class="btn" onclick="downloadCSV('pivot')">현황표 CSV</button>
+                <button class="btn" onclick="downloadCSV('filtered')">필터링 전체 CSV</button>
+                <button class="btn" onclick="downloadTXT()">요약 리포트 TXT</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quality -->
+    <div class="grid-full">
+        <div class="panel">
+            <h3>데이터 품질 체크</h3>
+            <div class="quality-row">
+                <div class="kpi-card" style="border-left-color:var(--success)">
+                    <div class="value" id="kNormal">-</div><div class="label">정상 분류</div>
+                    <div class="sub" id="kNormalPct"></div>
+                </div>
+                <div class="kpi-card" style="border-left-color:#ff9800">
+                    <div class="value" id="kUnknown">-</div><div class="label">미분류/불명확</div>
+                    <div class="sub" id="kUnknownPct"></div>
+                </div>
+            </div>
+            <div id="qualityDetail"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ STATUS BAR ═══ -->
+<div class="status-bar" id="statusBar">로딩 중...</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!-- SCRIPT -->
+<!-- ═══════════════════════════════════════ -->
+<script>
+// ── Globals ──
+let RAW = [];
+let FILTERED = [];
+let map = null;
+let markers = null;
+let charts = {};
+
+const REGION_COLORS = {
+    '수도권북서':'#4285f4','수도권북동':'#34a853','수도권남동':'#ea4335','수도권남서':'#9c27b0',
+    '수도권기타':'#5f6368','인천기타':'#ff9800','강원권':'#00bcd4','충청권':'#8bc34a',
+    '경상권':'#e91e63','전라권':'#795548','기타':'#9e9e9e'
+};
+const MARKER_COLORS = {
+    '수도권북서':'blue','수도권북동':'green','수도권남동':'red','수도권남서':'purple',
+    '수도권기타':'grey','인천기타':'orange','강원권':'cyan','충청권':'lime',
+    '경상권':'pink','전라권':'brown','기타':'grey'
+};
+
+// ── Tabs ──
+function switchTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.getElementById('tab-'+name).classList.add('active');
+    event.target.classList.add('active');
+    if (name === 'dashboard' && map) setTimeout(() => map.invalidateSize(), 100);
+}
+
+function switchClsTab(name) {
+    document.querySelectorAll('.cls-tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.cls-content').forEach(c => c.classList.remove('active'));
+    document.getElementById('cls-'+name).classList.add('active');
+    event.target.classList.add('active');
+}
+
+// ── Init Map ──
+function initMap() {
+    map = L.map('map').setView([36.5,127.5],7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+        maxZoom:19, attribution:'© OpenStreetMap'
+    }).addTo(map);
+    markers = L.markerClusterGroup({
+        disableClusteringAtZoom:15, maxClusterRadius:50,
+        chunkedLoading:true, chunkInterval:100, chunkDelay:10
+    });
+    map.addLayer(markers);
+}
+
+// ── Load Data ──
+async function loadData() {
+    const t0 = performance.now();
+    try {
+        const r = await fetch('dashboard_data.json');
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        RAW = await r.json();
+        const ms = (performance.now()-t0).toFixed(0);
+
+        // populate filters
+        const regions = [...new Set(RAW.map(d=>d['권역']).filter(Boolean))].sort();
+        const models = [...new Set(RAW.map(d=>d['모델분류']).filter(Boolean))].sort();
+        const rSel = document.getElementById('regionFilter');
+        const mSel = document.getElementById('modelFilter');
+        regions.forEach(r => { const o=document.createElement('option'); o.value=r; o.textContent=r; rSel.appendChild(o); });
+        models.forEach(m => { const o=document.createElement('option'); o.value=m; o.textContent=m; mSel.appendChild(o); });
+
+        // date range
+        const starts = RAW.map(d=>d['운영계약시작일']).filter(Boolean).sort();
+        const ends = RAW.map(d=>d['운영계약종료일']).filter(Boolean).sort();
+        if (starts.length) document.getElementById('startDate').value = starts[0] > '2022-01-01' ? '2022-01-01' : starts[0];
+        if (ends.length) {
+            const lastEnd = ends[ends.length-1];
+            document.getElementById('endDate').value = lastEnd < '2028-01-01' ? lastEnd : '2028-01-01';
+        }
+
+        document.getElementById('loadStatusUpload').className = 'success-bar';
+        document.getElementById('loadStatusUpload').textContent =
+            `dashboard_data.json 로드 완료: ${RAW.length.toLocaleString()}건 (${ms}ms)`;
+        document.getElementById('statusBar').textContent =
+            `데이터: ${RAW.length.toLocaleString()}건 로드 (${ms}ms)`;
+
+        applyFilters();
+    } catch(e) {
+        document.getElementById('loadStatusUpload').className = 'warn-bar';
+        document.getElementById('loadStatusUpload').innerHTML =
+            `dashboard_data.json 로드 실패: ${e.message}<br>
+            <small>export_json.py를 먼저 실행하거나, 아래에서 JSON 파일을 업로드하세요.</small>`;
+        document.getElementById('statusBar').textContent = `오류: ${e.message}`;
+    }
+}
+
+// ── File Upload ──
+function setupUpload() {
+    const area = document.getElementById('uploadArea');
+    const input = document.getElementById('fileInput');
+
+    ['dragenter','dragover'].forEach(e => area.addEventListener(e, ev => { ev.preventDefault(); area.classList.add('dragover'); }));
+    ['dragleave','drop'].forEach(e => area.addEventListener(e, ev => { ev.preventDefault(); area.classList.remove('dragover'); }));
+    area.addEventListener('drop', ev => { if(ev.dataTransfer.files.length) handleFile(ev.dataTransfer.files[0]); });
+    input.addEventListener('change', () => { if(input.files.length) handleFile(input.files[0]); });
+}
+
+function handleFile(file) {
+    const res = document.getElementById('uploadResult');
+    res.style.display = 'block';
+    res.innerHTML = `<div class="info-bar">파일 처리 중: ${file.name} (${(file.size/1024/1024).toFixed(1)}MB)...</div>`;
+
+    if (file.name.endsWith('.json')) {
+        const reader = new FileReader();
+        reader.onload = e => {
+            try {
+                RAW = JSON.parse(e.target.result);
+                res.innerHTML = `<div class="success-bar">JSON 로드 완료: ${RAW.length.toLocaleString()}건</div>`;
+                refreshFilterOptions();
+                applyFilters();
+            } catch(err) { res.innerHTML = `<div class="warn-bar">JSON 파싱 오류: ${err.message}</div>`; }
+        };
+        reader.readAsText(file);
+    } else if (file.name.endsWith('.csv')) {
+        const reader = new FileReader();
+        reader.onload = e => {
+            try {
+                RAW = parseCSV(e.target.result);
+                res.innerHTML = `<div class="success-bar">CSV 로드 완료: ${RAW.length.toLocaleString()}건</div>`;
+                refreshFilterOptions();
+                applyFilters();
+            } catch(err) { res.innerHTML = `<div class="warn-bar">CSV 파싱 오류: ${err.message}</div>`; }
+        };
+        reader.readAsText(file, 'utf-8');
+    } else {
+        res.innerHTML = `<div class="warn-bar">브라우저에서는 JSON/CSV만 직접 로드 가능합니다. Excel은 export_json.py로 변환하세요.</div>`;
+    }
+}
+
+function parseCSV(text) {
+    const lines = text.trim().split('\n');
+    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g,''));
+    return lines.slice(1).map(line => {
+        const vals = line.split(',').map(v => v.trim().replace(/^"|"$/g,''));
+        const obj = {};
+        headers.forEach((h,i) => obj[h] = vals[i] || '');
+        return obj;
+    });
+}
+
+function refreshFilterOptions() {
+    const rSel = document.getElementById('regionFilter');
+    const mSel = document.getElementById('modelFilter');
+    rSel.innerHTML = '<option value="all">전체</option>';
+    mSel.innerHTML = '<option value="all">전체</option>';
+    const regions = [...new Set(RAW.map(d=>d['권역']).filter(Boolean))].sort();
+    const models = [...new Set(RAW.map(d=>d['모델분류']).filter(Boolean))].sort();
+    regions.forEach(r => { const o=document.createElement('option'); o.value=r; o.textContent=r; rSel.appendChild(o); });
+    models.forEach(m => { const o=document.createElement('option'); o.value=m; o.textContent=m; mSel.appendChild(o); });
+}
+
+// ── Filter ──
+function applyFilters() {
+    if (!RAW.length) return;
+    const t0 = performance.now();
+    const sd = document.getElementById('startDate').value;
+    const ed = document.getElementById('endDate').value;
+    const rv = document.getElementById('regionFilter').value;
+    const mv = document.getElementById('modelFilter').value;
+
+    FILTERED = RAW.filter(d => {
+        if (d['운영계약시작일'] && d['운영계약시작일'] > ed) return false;
+        if (d['운영계약종료일'] && d['운영계약종료일'] < sd) return false;
+        if (rv !== 'all' && d['권역'] !== rv) return false;
+        if (mv !== 'all' && d['모델분류'] !== mv) return false;
+        return true;
+    });
+
+    renderKPI();
+    renderMap();
+    renderModelChart();
+    renderRegionCharts();
+    renderHeatmap();
+    renderPivot();
+    renderQuality();
+
+    const ms = (performance.now()-t0).toFixed(0);
+    document.getElementById('filterInfo').textContent =
+        `${FILTERED.length.toLocaleString()}건 (${ms}ms)`;
+    document.getElementById('statusBar').textContent =
+        `필터 결과: ${FILTERED.length.toLocaleString()} / ${RAW.length.toLocaleString()}건 (${ms}ms)`;
+}
+
+// ── KPI ──
+function renderKPI() {
+    const total = FILTERED.length;
+    const siteSet = new Set(FILTERED.map(d=>d['사이트ID']));
+    const regionSet = new Set(FILTERED.map(d=>d['권역']));
+    const fast = FILTERED.filter(d=>(d['모델분류']||'').includes('급속')).length;
+    const slow = total - fast;
+    const pct = total ? (fast/total*100).toFixed(1) : '0';
+
+    document.getElementById('kTotal').textContent = total.toLocaleString();
+    document.getElementById('kSites').textContent = siteSet.size.toLocaleString();
+    document.getElementById('kRegions').textContent = regionSet.size;
+    document.getElementById('kFast').textContent = fast.toLocaleString();
+    document.getElementById('kFastPct').textContent = pct + '%';
+    document.getElementById('kSlow').textContent = slow.toLocaleString();
+}
+
+// ── Map ──
+function renderMap() {
+    markers.clearLayers();
+    const withCoords = FILTERED.filter(d => d['위도'] && d['경도'] && !isNaN(+d['위도']) && !isNaN(+d['경도']));
+
+    // group by site
+    const siteMap = {};
+    withCoords.forEach(d => {
+        const sid = d['사이트ID'] || 'unknown';
+        if (!siteMap[sid]) siteMap[sid] = { lat:+d['위도'], lng:+d['경도'], addr:d['주소']||'', region:d['권역']||'기타', models:[], total:0, fast:0 };
+        siteMap[sid].total++;
+        siteMap[sid].models.push(d['모델분류']||'');
+        if ((d['모델분류']||'').includes('급속')) siteMap[sid].fast++;
+    });
+
+    const sites = Object.entries(siteMap);
+    const mList = [];
+
+    sites.forEach(([sid, s]) => {
+        const slow = s.total - s.fast;
+        const modelsText = [...new Set(s.models)].sort().join(', ');
+        const color = REGION_COLORS[s.region] || '#9e9e9e';
+        const naverUrl = `https://map.naver.com/p/search/${encodeURIComponent(s.addr+' 전기차')}`;
+
+        const icon = L.divIcon({
+            className:'',
+            html:`<div style="width:12px;height:12px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>`,
+            iconSize:[16,16], iconAnchor:[8,8]
+        });
+
+        const popup = `
+            <div style="min-width:260px;font-family:'Malgun Gothic',sans-serif">
+                <h4 style="margin:0 0 8px;border-bottom:3px solid ${color};padding-bottom:4px">${sid}</h4>
+                <table style="width:100%;font-size:12px">
+                    <tr><td style="font-weight:bold;padding:3px">충전기</td><td>${s.total}대 (급속${s.fast}/완속${slow})</td></tr>
+                    <tr><td style="font-weight:bold;padding:3px">권역</td><td>${s.region}</td></tr>
+                    <tr><td style="font-weight:bold;padding:3px">주소</td><td style="font-size:11px">${s.addr}</td></tr>
+                    <tr><td style="font-weight:bold;padding:3px">모델</td><td style="font-size:11px">${modelsText}</td></tr>
+                </table>
+                <div style="text-align:center;margin-top:8px">
+                    <a href="${naverUrl}" target="_blank"
+                       style="display:inline-block;padding:6px 14px;background:#03C75A;color:white;
+                              text-decoration:none;border-radius:6px;font-size:12px;font-weight:bold">네이버 지도</a>
+                </div>
+            </div>`;
+
+        const m = L.marker([s.lat,s.lng],{icon})
+            .bindTooltip(`${sid} | ${s.total}기 | ${s.region}`,{direction:'top'})
+            .bindPopup(popup,{maxWidth:300});
+        mList.push(m);
+    });
+
+    markers.addLayers(mList);
+    if (mList.length) map.fitBounds(L.featureGroup(mList).getBounds().pad(0.1));
+
+    // map KPIs
+    const total = FILTERED.length;
+    document.getElementById('mapInfo').style.display = sites.length ? 'block' : 'none';
+    document.getElementById('mapInfo').textContent = `${sites.length.toLocaleString()}개 사이트, ${withCoords.length.toLocaleString()}개 충전기 좌표`;
+    document.getElementById('kMapSites').textContent = sites.length.toLocaleString();
+    document.getElementById('kMapChargers').textContent = withCoords.length.toLocaleString();
+    document.getElementById('kCoordRate').textContent = total ? (withCoords.length/total*100).toFixed(1)+'%' : '-';
+    document.getElementById('kMissing').textContent = (total-withCoords.length).toLocaleString();
+}
+
+// ── Charts ──
+function countBy(arr, key) {
+    const m = {};
+    arr.forEach(d => { const v = d[key]||'(없음)'; m[v]=(m[v]||0)+1; });
+    return Object.entries(m).sort((a,b)=>b[1]-a[1]);
+}
+
+function renderModelChart() {
+    const data = countBy(FILTERED,'모델분류').slice(0,15);
+    const ctx = document.getElementById('modelChart').getContext('2d');
+    if (charts.model) charts.model.destroy();
+    charts.model = new Chart(ctx,{
+        type:'bar',
+        data:{ labels:data.map(d=>d[0]), datasets:[{ data:data.map(d=>d[1]), backgroundColor:'#4285f4', borderRadius:4 }] },
+        options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{beginAtZero:true}} }
+    });
+
+    // table
+    const all = countBy(FILTERED,'모델분류');
+    const totalAll = all.reduce((s,d)=>s+d[1],0);
+    let html = '<thead><tr><th>모델분류</th><th>수량</th><th>비율</th></tr></thead><tbody>';
+    all.forEach(([m,c]) => { html += `<tr><td>${m}</td><td>${c.toLocaleString()}</td><td>${(c/totalAll*100).toFixed(1)}%</td></tr>`; });
+    html += '</tbody>';
+    document.getElementById('modelTable').innerHTML = html;
+}
+
+function renderRegionCharts() {
+    const data = countBy(FILTERED,'권역');
+
+    // Pie
+    const ctx1 = document.getElementById('regionPieChart').getContext('2d');
+    if (charts.regionPie) charts.regionPie.destroy();
+    charts.regionPie = new Chart(ctx1,{
+        type:'doughnut',
+        data:{
+            labels:data.map(d=>d[0]),
+            datasets:[{ data:data.map(d=>d[1]), backgroundColor:data.map(d=>REGION_COLORS[d[0]]||'#9e9e9e'), borderWidth:2 }]
+        },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'right',labels:{font:{size:11}}}} }
+    });
+
+    // Bar
+    const ctx2 = document.getElementById('regionBarChart').getContext('2d');
+    if (charts.regionBar) charts.regionBar.destroy();
+    charts.regionBar = new Chart(ctx2,{
+        type:'bar',
+        data:{
+            labels:data.map(d=>d[0]),
+            datasets:[{ data:data.map(d=>d[1]), backgroundColor:data.map(d=>REGION_COLORS[d[0]]||'#9e9e9e'), borderRadius:4 }]
+        },
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}} }
+    });
+}
+
+// ── Heatmap (HTML table) ──
+function renderHeatmap() {
+    const regionCounts = countBy(FILTERED,'권역');
+    const modelCounts = countBy(FILTERED,'모델분류').slice(0,12);
+    const regions = regionCounts.map(d=>d[0]);
+    const models = modelCounts.map(d=>d[0]);
+
+    const matrix = {};
+    let maxVal = 0;
+    regions.forEach(r => { matrix[r] = {}; models.forEach(m => matrix[r][m]=0); });
+    FILTERED.forEach(d => {
+        const r=d['권역'], m=d['모델분류'];
+        if (matrix[r] && models.includes(m)) { matrix[r][m]++; maxVal=Math.max(maxVal,matrix[r][m]); }
+    });
+
+    let html = '<table class="data-table"><thead><tr><th>권역＼모델</th>';
+    models.forEach(m => html += `<th style="font-size:11px;writing-mode:vertical-lr;height:100px">${m}</th>`);
+    html += '</tr></thead><tbody>';
+    regions.forEach(r => {
+        html += `<tr><td style="font-weight:bold">${r}</td>`;
+        models.forEach(m => {
+            const v = matrix[r][m];
+            const intensity = maxVal ? v/maxVal : 0;
+            const bg = v ? `rgba(26,115,232,${0.1+intensity*0.7})` : '#f8f9fa';
+            const color = intensity > 0.5 ? 'white' : '#333';
+            html += `<td style="text-align:center;background:${bg};color:${color};font-size:11px">${v||''}</td>`;
+        });
+        html += '</tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById('heatmapWrap').innerHTML = html;
+}
+
+// ── Pivot ──
+function renderPivot() {
+    const regions = [...new Set(FILTERED.map(d=>d['권역']))].sort();
+    const models = [...new Set(FILTERED.map(d=>d['모델분류']))].sort();
+
+    const matrix = {};
+    const rTotals = {};
+    const mTotals = {};
+    regions.forEach(r => { matrix[r]={}; rTotals[r]=0; });
+    models.forEach(m => mTotals[m]=0);
+
+    FILTERED.forEach(d => {
+        const r=d['권역'], m=d['모델분류'];
+        if (!matrix[r]) { matrix[r]={}; rTotals[r]=0; }
+        matrix[r][m] = (matrix[r][m]||0)+1;
+        rTotals[r]++;
+        mTotals[m] = (mTotals[m]||0)+1;
+    });
+
+    let html = '<thead><tr><th>권역</th>';
+    models.forEach(m => html += `<th style="font-size:10px">${m}</th>`);
+    html += '<th style="font-weight:bold">합계</th></tr></thead><tbody>';
+    regions.forEach(r => {
+        html += `<tr><td style="font-weight:bold">${r}</td>`;
+        models.forEach(m => html += `<td>${matrix[r][m]||''}</td>`);
+        html += `<td style="font-weight:bold">${rTotals[r]}</td></tr>`;
+    });
+    html += '<tr style="font-weight:bold;background:#f0f0f0"><td>합계</td>';
+    models.forEach(m => html += `<td>${mTotals[m]||''}</td>`);
+    html += `<td>${FILTERED.length}</td></tr>`;
+    html += '</tbody>';
+    document.getElementById('pivotTable').innerHTML = html;
+}
+
+// ── Quality ──
+function renderQuality() {
+    const total = FILTERED.length;
+    const bad = ['수도권기타','인천기타','기타'];
+    const unknown = FILTERED.filter(d => bad.includes(d['권역']));
+    const normal = total - unknown.length;
+
+    document.getElementById('kNormal').textContent = normal.toLocaleString();
+    document.getElementById('kNormalPct').textContent = total ? (normal/total*100).toFixed(1)+'%' : '';
+    document.getElementById('kUnknown').textContent = unknown.length.toLocaleString();
+    document.getElementById('kUnknownPct').textContent = total ? (unknown.length/total*100).toFixed(1)+'%' : '';
+
+    const detail = document.getElementById('qualityDetail');
+    if (unknown.length === 0) {
+        detail.innerHTML = '<div class="success-bar">모든 주소가 정상 분류되었습니다!</div>';
+    } else {
+        let html = `<div class="warn-bar">${unknown.length.toLocaleString()}개 미분류</div>`;
+        html += '<div class="table-wrap" style="max-height:200px"><table class="data-table"><thead><tr><th>주소</th><th>권역</th><th>모델</th><th>사이트ID</th></tr></thead><tbody>';
+        unknown.slice(0,10).forEach(d => {
+            html += `<tr><td>${d['주소']||''}</td><td>${d['권역']||''}</td><td>${d['모델분류']||''}</td><td>${d['사이트ID']||''}</td></tr>`;
+        });
+        html += '</tbody></table></div>';
+        if (unknown.length > 10) html += `<p style="font-size:12px;color:#888;margin-top:4px">총 ${unknown.length}건 중 10건만 표시</p>`;
+        detail.innerHTML = html;
+    }
+}
+
+// ── Downloads ──
+function downloadCSV(type) {
+    let csv = '';
+    if (type === 'pivot') {
+        const regions = [...new Set(FILTERED.map(d=>d['권역']))].sort();
+        const models = [...new Set(FILTERED.map(d=>d['모델분류']))].sort();
+        const matrix = {};
+        regions.forEach(r => matrix[r]={});
+        FILTERED.forEach(d => { matrix[d['권역']][d['모델분류']]=(matrix[d['권역']][d['모델분류']]||0)+1; });
+        csv = '권역,' + models.join(',') + '\n';
+        regions.forEach(r => { csv += r + ',' + models.map(m=>matrix[r][m]||0).join(',') + '\n'; });
+    } else {
+        const keys = Object.keys(FILTERED[0]||{});
+        csv = keys.join(',') + '\n';
+        FILTERED.forEach(d => { csv += keys.map(k => `"${(d[k]||'').toString().replace(/"/g,'""')}"`).join(',') + '\n'; });
+    }
+    const bom = '\uFEFF';
+    const blob = new Blob([bom+csv],{type:'text/csv;charset=utf-8'});
+    const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download = type==='pivot' ? '현황표.csv' : '필터링데이터.csv';
+    a.click();
+}
+
+function downloadTXT() {
+    const total = FILTERED.length;
+    const fast = FILTERED.filter(d=>(d['모델분류']||'').includes('급속')).length;
+    const sites = new Set(FILTERED.map(d=>d['사이트ID'])).size;
+    const txt = `충전기 현황 요약\n기간: ${document.getElementById('startDate').value} ~ ${document.getElementById('endDate').value}\n총: ${total}대, 사이트: ${sites}개, 급속: ${fast}대 (${total?(fast/total*100).toFixed(1):0}%)`;
+    const blob = new Blob([txt],{type:'text/plain;charset=utf-8'});
+    const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='요약.txt'; a.click();
+}
+
+// ── Classification Tables ──
+function renderClassificationTables() {
+    document.getElementById('fastTable').innerHTML = `
+        <thead><tr><th>분류</th><th>AG코드</th></tr></thead><tbody>
+        <tr><td>급속스필_100</td><td>S0F1</td></tr>
+        <tr><td>급속스필_50</td><td>S0F5</td></tr>
+        <tr><td>급속PNE_100</td><td>EVQ- (AJ=100)</td></tr>
+        <tr><td>급속PNE_50</td><td>EVQ-/EV1- (AJ=50)</td></tr>
+        <tr><td>급속PNE_200</td><td>MAXE</td></tr>
+        <tr><td>급속PNE_150</td><td>DP15</td></tr>
+        <tr><td>급속애플망고_200</td><td>A01-/AD1-</td></tr>
+        <tr><td>급속SK_100</td><td>Q081/Q101/Q010</td></tr>
+        <tr><td>급속SK_200</td><td>Q071/Q102</td></tr>
+        <tr><td>급속코스텔_50</td><td>1Y25/1Y24</td></tr>
+        <tr><td>급속중앙제어_50</td><td>1911</td></tr>
+        <tr><td>급속그린파워_100</td><td>1900</td></tr>
+        <tr><td>급속그린파워_50</td><td>19C0</td></tr>
+        <tr><td>급속알박_50</td><td>QC50</td></tr>
+        </tbody>`;
+
+    document.getElementById('slowTable').innerHTML = `
+        <thead><tr><th>분류</th><th>조건</th></tr></thead><tbody>
+        <tr><td>알박구형</td><td>NC07</td></tr>
+        <tr><td>알박신형</td><td>23NA/22NA/24NA/25NA</td></tr>
+        <tr><td>10kW</td><td>AD에 3J10</td></tr>
+        <tr><td>신형대</td><td>EVL-1C-22CQ / SBDA / EVL+1107</td></tr>
+        <tr><td>구형대</td><td>EVL-1C / EVL 기본</td></tr>
+        <tr><td>신형소</td><td>SBAA</td></tr>
+        <tr><td>F01/PC01</td><td>SBPA / SBOA</td></tr>
+        <tr><td>UC01</td><td>SBUA</td></tr>
+        <tr><td>스필_7kW</td><td>SVI0</td></tr>
+        <tr><td>이카플러그</td><td>E0C / CP</td></tr>
+        <tr><td>중앙제어_7kW</td><td>1907/1912</td></tr>
+        <tr><td>SK_7kW</td><td>SC-P</td></tr>
+        <tr><td>3kW</td><td>SANA</td></tr>
+        <tr><td>PNE_7kW</td><td>EVS-/007S</td></tr>
+        </tbody>`;
+
+    document.getElementById('regionTable').innerHTML = `
+        <thead><tr><th>권역</th><th>주요 지역</th></tr></thead><tbody>
+        <tr><td>수도권북서</td><td>고양, 부천, 김포, 파주, 은평, 마포, 서대문, 양천, 강서</td></tr>
+        <tr><td>수도권북동</td><td>도봉, 노원, 중랑, 강북, 성북, 동대문, 의정부, 남양주, 구리</td></tr>
+        <tr><td>수도권남동</td><td>강남, 서초, 송파, 강동, 성남, 용인, 하남, 수원, 평택</td></tr>
+        <tr><td>수도권남서</td><td>구로, 금천, 영등포, 동작, 관악, 안산, 안양 + 인천 주요구</td></tr>
+        <tr><td>강원권</td><td>강원도 전역</td></tr>
+        <tr><td>충청권</td><td>충청, 세종, 대전</td></tr>
+        <tr><td>경상권</td><td>경상, 부산, 대구, 울산</td></tr>
+        <tr><td>전라권</td><td>전라, 광주</td></tr>
+        </tbody>`;
+}
+
+// ── Init ──
+initMap();
+renderClassificationTables();
+setupUpload();
+loadData();
+</script>
+</body>
+</html>
