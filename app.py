@@ -2,6 +2,7 @@ import streamlit as st
 import openpyxl
 from openpyxl.utils import get_column_letter
 import io
+import os
 import time
 import re
 from datetime import datetime, date
@@ -20,6 +21,10 @@ st.set_page_config(
     page_icon="⚡",
     layout="wide"
 )
+
+# ─── 기본 파일 경로 설정 ───
+DEFAULT_DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "default_data.xlsx")
+
 
 def get_korea_time():
     korea_tz = pytz.timezone('Asia/Seoul')
@@ -195,6 +200,82 @@ def classify_model(row_data, row_num):
     else:
         return "기타"
 
+
+# ─── default_data.xlsx 로드 함수 ───
+def load_default_excel(filepath):
+    """
+    default_data.xlsx를 openpyxl로 읽어서 분류 처리 후 DataFrame 반환.
+    업로드 파일 처리와 동일한 분류 로직을 적용한다.
+    """
+    wb = openpyxl.load_workbook(filepath, data_only=True)
+    ws = wb.active
+
+    max_row = ws.max_row
+    if max_row < 5:
+        max_row = 5
+    max_col = max(ws.max_column, 54)
+
+    dashboard_data = []
+
+    for row_num in range(5, max_row + 1):
+        row_data = {}
+        for col_num in range(1, max_col + 1):
+            col_letter = get_column_letter(col_num)
+            cell_value = ws.cell(row=row_num, column=col_num).value
+            row_data[col_letter] = cell_value
+
+        # 모든 값이 비어있으면 건너뛰기
+        if all(v is None for v in row_data.values()):
+            continue
+
+        classification_result = classify_model(row_data, row_num)
+        region_result = classify_region(get_safe_value(row_data, 'H'))
+
+        ar_value = row_data.get('AR')
+        as_value = row_data.get('AS')
+        ar_cleaned = clean_and_parse_date(ar_value)
+        as_cleaned = clean_and_parse_date(as_value)
+
+        site_id = get_safe_value(row_data, 'A')
+        address = get_safe_value(row_data, 'H')
+
+        longitude = row_data.get('AM')
+        latitude = row_data.get('AN')
+        try:
+            longitude = float(longitude) if longitude is not None else None
+        except (ValueError, TypeError):
+            longitude = None
+        try:
+            latitude = float(latitude) if latitude is not None else None
+        except (ValueError, TypeError):
+            latitude = None
+
+        dashboard_data.append({
+            '사이트ID': site_id if site_id else f'AUTO_{row_num}',
+            '모델분류': classification_result,
+            '권역': region_result,
+            '주소': address,
+            '위도': latitude,
+            '경도': longitude,
+            '운영계약시작일': ar_value,
+            '운영계약종료일': as_value,
+            '운영계약시작일_cleaned': ar_cleaned,
+            '운영계약종료일_cleaned': as_cleaned,
+            '행번호': row_num
+        })
+
+    df = pd.DataFrame(dashboard_data)
+    if len(df) > 0:
+        df['운영계약시작일_parsed'] = df['운영계약시작일_cleaned']
+        df['운영계약종료일_parsed'] = df['운영계약종료일_cleaned']
+    else:
+        df['운영계약시작일_parsed'] = None
+        df['운영계약종료일_parsed'] = None
+
+    wb.close()
+    return df
+
+
 def create_sample_data():
     sample_data = {
         '사이트ID': [f'SITE_{i:03d}' for i in range(1, 21)] + [f'SITE_{i:03d}' for i in range(1, 11)],
@@ -275,7 +356,6 @@ def create_charger_map(filtered_df):
     if '사이트ID' not in map_data.columns or map_data['사이트ID'].isna().all():
         map_data['사이트ID'] = [f'SITE_{i:04d}' for i in range(len(map_data))]
     
-    # ✅ 수정: grouped aggregation을 안전하게 처리
     grouped = map_data.groupby('사이트ID').agg({
         '위도': 'first',
         '경도': 'first',
@@ -286,14 +366,11 @@ def create_charger_map(filtered_df):
         '운영계약종료일': 'first'
     }).reset_index()
     
-    # ✅ 수정: 충전기 수 계산을 별도로 안전하게 수행
     site_total = map_data.groupby('사이트ID').size().reset_index(name='총충전기수')
     
-    # 급속 충전기 수 계산
     fast_mask = map_data['모델분류'].str.contains('급속', na=False)
     fast_counts = map_data[fast_mask].groupby('사이트ID').size().reset_index(name='급속충전기수')
     
-    # 병합
     grouped = grouped.merge(site_total, on='사이트ID', how='left')
     grouped = grouped.merge(fast_counts, on='사이트ID', how='left')
     grouped['급속충전기수'] = grouped['급속충전기수'].fillna(0).astype(int)
@@ -598,7 +675,6 @@ def show_dashboard(df):
     
     st.markdown("### 운영계약 기간 필터")
     
-    # ✅ 수정: 날짜 파싱을 안전하게 처리
     df_dates = df.copy()
     df_dates['운영계약시작일_parsed'] = pd.to_datetime(df_dates['운영계약시작일_parsed'], errors='coerce')
     df_dates['운영계약종료일_parsed'] = pd.to_datetime(df_dates['운영계약종료일_parsed'], errors='coerce')
@@ -640,7 +716,6 @@ def show_dashboard(df):
             st.markdown("<br>", unsafe_allow_html=True)
             filter_applied = st.button("필터 적용", type="primary", use_container_width=True)
         
-        # ✅ 수정: pandas Timestamp로 비교하여 타입 불일치 방지
         start_ts = pd.Timestamp(start_date)
         end_ts = pd.Timestamp(end_date)
         
@@ -651,7 +726,6 @@ def show_dashboard(df):
             df_dates['운영계약종료일_parsed'].notna()
         )
         
-        # ✅ 수정: 원본 df에서 필터링 (df_dates는 날짜 비교용)
         filtered_df = df[mask].copy()
         
         st.info(
@@ -826,7 +900,6 @@ def show_dashboard(df):
         
         crosstab = pd.crosstab(filtered_df['권역'], filtered_df['모델분류'])
         top_models = filtered_df['모델분류'].value_counts().head(12).index
-        # ✅ 수정: top_models 중 crosstab에 존재하는 것만 선택
         available_models = [m for m in top_models if m in crosstab.columns]
         
         if available_models:
@@ -941,7 +1014,6 @@ def show_dashboard(df):
             st.warning(f"{len(unknown_regions):,}개의 주소가 미분류되었거나 불명확합니다.")
             
             with st.expander("미분류 주소 상세 보기", expanded=False):
-                # ✅ 수정: value_counts 결과 컬럼명을 명시적으로 처리
                 unknown_stats = unknown_regions['권역'].value_counts()
                 stats_df = pd.DataFrame({
                     '권역': unknown_stats.index,
@@ -968,10 +1040,26 @@ def show_dashboard(df):
     else:
         st.warning("유효한 운영계약 날짜 데이터가 없습니다. AR열과 AS열을 확인해주세요.")
 
+
 def main():
+    # ─── 세션 초기화: default_data.xlsx 우선, 없으면 샘플 ───
     if 'processed_df' not in st.session_state:
-        st.session_state.processed_df = create_sample_data()
-        st.session_state.is_sample_data = True
+        if os.path.exists(DEFAULT_DATA_PATH):
+            try:
+                with st.spinner("default_data.xlsx 파일을 로드하는 중..."):
+                    st.session_state.processed_df = load_default_excel(DEFAULT_DATA_PATH)
+                    st.session_state.is_sample_data = False
+                    st.session_state.default_file_loaded = True
+            except Exception as e:
+                st.warning(f"default_data.xlsx 로드 실패: {e} — 샘플 데이터를 사용합니다.")
+                st.session_state.processed_df = create_sample_data()
+                st.session_state.is_sample_data = True
+                st.session_state.default_file_loaded = False
+        else:
+            st.session_state.processed_df = create_sample_data()
+            st.session_state.is_sample_data = True
+            st.session_state.default_file_loaded = False
+
     if 'processed_file' not in st.session_state:
         st.session_state.processed_file = None
     
@@ -984,7 +1072,14 @@ def main():
     tab1, tab2 = st.tabs(["파일 업로드 & 분류", "운영현황 대시보드"])
     
     with tab1:
-        if st.session_state.get('is_sample_data', False):
+        # ─── 로드 상태에 따른 안내 메시지 ───
+        if st.session_state.get('default_file_loaded', False):
+            row_count = len(st.session_state.processed_df)
+            st.success(
+                f"**default_data.xlsx** 파일이 자동으로 로드되었습니다. "
+                f"(총 {row_count:,}개 행) — '운영현황 대시보드' 탭에서 바로 확인하세요!"
+            )
+        elif st.session_state.get('is_sample_data', False):
             st.info("**현재 샘플 데이터가 로드되어 있습니다.** '운영현황 대시보드' 탭에서 바로 지도 기능을 체험해보세요!")
         
         uploaded_file = st.file_uploader(
@@ -1030,6 +1125,7 @@ def main():
                     st.session_state.processed_df = result_df
                     st.session_state.processed_file = processed_file
                     st.session_state.is_sample_data = False
+                    st.session_state.default_file_loaded = False
                     
                     st.success(
                         f"총 **{processed_count:,}개 행**의 모델분류 및 권역분류가 "
@@ -1077,7 +1173,9 @@ def main():
     
     with tab2:
         if st.session_state.processed_df is not None:
-            if st.session_state.get('is_sample_data', False):
+            if st.session_state.get('default_file_loaded', False):
+                st.info("**default_data.xlsx 파일 데이터를 표시 중입니다.** 다른 파일을 분석하려면 '파일 업로드 & 분류' 탭에서 업로드하세요.")
+            elif st.session_state.get('is_sample_data', False):
                 st.warning("**현재 샘플 데이터를 사용 중입니다.** 실제 데이터를 분석하려면 '파일 업로드 & 분류' 탭에서 파일을 업로드하세요.")
             
             show_dashboard(st.session_state.processed_df)
