@@ -17,24 +17,21 @@ from urllib.parse import quote
 # 페이지 설정
 st.set_page_config(
     page_title="충전기 모델분류 자동화",
-    page_icon="?",
+    page_icon="⚡",
     layout="wide"
 )
 
 def get_korea_time():
-    """한국 시간(KST) 반환"""
     korea_tz = pytz.timezone('Asia/Seoul')
     return datetime.now(korea_tz)
 
 def get_safe_value(row_data, col_letter):
-    """엑셀 셀 값을 안전하게 문자열로 가져오는 헬퍼 함수"""
     val = row_data.get(col_letter)
     if val is None:
         return ""
     return str(val).strip()
 
 def format_time(seconds):
-    """초를 읽기 쉬운 형식으로 변환"""
     if seconds < 60:
         return f"{seconds:.1f}초"
     elif seconds < 3600:
@@ -47,38 +44,27 @@ def format_time(seconds):
         return f"{hours}시간 {minutes}분"
 
 def clean_and_parse_date(date_value):
-    """날짜 데이터 정리 및 변환"""
     if date_value is None:
         return None
-    
     if isinstance(date_value, datetime):
         return date_value.date()
     if isinstance(date_value, date):
         return date_value
-    
     if isinstance(date_value, str):
         date_str = date_value.strip()
-        
-        # 시간 부분 제거
-        date_str = re.sub(r'\s+\d{2}:\d{2}:\d{2}$', '', date_str)
-        date_str = re.sub(r'\s+00:00:00$', '', date_str)
-        date_str = re.sub(r'\s+0:00:00$', '', date_str)
-        
+        date_str = re.sub(r'\s+\d{1,2}:\d{2}:\d{2}$', '', date_str)
         if not date_str:
             return None
-        
         date_formats = [
             '%Y-%m-%d', '%Y/%m/%d', '%Y.%m.%d', '%Y%m%d',
             '%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S',
-            '%d-%m-%Y', '%d/%m/%d',
+            '%d-%m-%Y', '%d/%m/%Y',
         ]
-        
         for fmt in date_formats:
             try:
                 return datetime.strptime(date_str, fmt).date()
             except ValueError:
                 continue
-    
     try:
         if isinstance(date_value, (int, float)):
             from datetime import timedelta
@@ -86,11 +72,9 @@ def clean_and_parse_date(date_value):
             return (excel_epoch + timedelta(days=float(date_value))).date()
     except:
         pass
-    
     return None
 
 def format_date_for_excel(date_obj):
-    """date 객체를 엑셀용 YYYY-MM-DD 문자열로 변환"""
     if date_obj is None:
         return None
     if isinstance(date_obj, date):
@@ -98,20 +82,14 @@ def format_date_for_excel(date_obj):
     return None
 
 def classify_region(address):
-    """H열의 주소 데이터를 기반으로 권역을 분류하는 함수"""
     if not address:
         return "기타"
-    
     address_clean = str(address).strip()
-    
-    # 인천을 먼저 검사
     if re.search(r"인천", address_clean):
         if re.search(r"계양|남동|동구|미추홀|부평|연수|서구|중구|강화", address_clean):
             return "수도권남서"
         else:
-            return "인천??"
-    
-    # 서울/경기 검사
+            return "인천기타"
     elif re.search(r"서울|경기", address_clean):
         if re.search(r"고양|부천|김포|파주|은평구|마포구|서대문구|양천구|강서구|용산구|중구|종로구", address_clean):
             return "수도권북서"
@@ -123,8 +101,6 @@ def classify_region(address):
             return "수도권남서"
         else:
             return "수도권기타"
-    
-    # 광역권 분류
     elif re.search(r"강원", address_clean):
         return "강원권"
     elif re.search(r"충청|충남|충북|세종|대전", address_clean):
@@ -137,7 +113,6 @@ def classify_region(address):
         return "기타"
 
 def classify_model(row_data, row_num):
-    """엑셀 IFS 수식을 파이썬 로직으로 변환한 모델 분류 함수"""
     AD = get_safe_value(row_data, 'AD')
     AG = get_safe_value(row_data, 'AG')
     AH = get_safe_value(row_data, 'AH')
@@ -145,7 +120,6 @@ def classify_model(row_data, row_num):
     
     if AH == "급속":
         ag_left4 = AG[:4] if len(AG) >= 4 else AG
-        
         if ag_left4 == "S0F1":
             return "급속스필_100"
         elif ag_left4 == "S0F5":
@@ -222,7 +196,6 @@ def classify_model(row_data, row_num):
         return "기타"
 
 def create_sample_data():
-    """초기 샘플 데이터 생성 (30개) - 실제 좌표 포함"""
     sample_data = {
         '사이트ID': [f'SITE_{i:03d}' for i in range(1, 21)] + [f'SITE_{i:03d}' for i in range(1, 11)],
         '모델분류': [
@@ -249,7 +222,7 @@ def create_sample_data():
             '서울특별시 강서구 공항대로 지하 396', '경기도 성남시 분당구 판교역로 166', '울산광역시 남구 삼산로 282', '강원도 강릉시 경강로 2021', '서울특별시 양천구 목동서로 159',
             '전라남도 목포시 평화로 32', '경기도 성남시 중원구 사기막골로 45번길 14', '서울특별시 성북구 정릉로 77', '충청북도 청주시 상당구 상당로 82', '경상남도 창원시 의창구 중앙대로 151'
         ],
-        '위도': [  # AN열 (40번째)
+        '위도': [
             37.5583, 37.3945, 37.7388, 36.3704, 35.1681,
             37.5376, 37.8813, 37.5665, 35.1595, 37.3217,
             37.6398, 36.5760, 37.5420, 35.8285, 37.3422,
@@ -257,7 +230,7 @@ def create_sample_data():
             37.5583, 37.3945, 35.5384, 37.7519, 37.5172,
             34.7943, 37.4201, 37.5894, 36.6424, 35.2272
         ],
-        '경도': [  # AM열 (39번째)
+        '경도': [
             126.7944, 127.1116, 127.0467, 127.3622, 129.1303,
             126.7253, 127.7298, 126.9018, 126.8526, 127.1085,
             127.0253, 127.1472, 126.7389, 128.5658, 127.9202,
@@ -293,56 +266,48 @@ def create_sample_data():
     return df
 
 def create_charger_map(filtered_df):
-    """
-    ??? 핵심 기능: 사이트ID로 그룹화된 충전기 지도 생성
-    - AM열(경도), AN열(위도) 사용
-    - 사이트ID별 1개 마커 표시
-    - 네이버 지도 연동
-    """
-    # 유효한 좌표가 있는 데이터만 사용
+    """사이트ID로 그룹화된 충전기 지도 생성"""
     map_data = filtered_df.dropna(subset=['위도', '경도']).copy()
     
     if len(map_data) == 0:
         return None, "좌표 데이터가 없습니다. AM열(경도), AN열(위도)를 확인해주세요."
     
-    # 사이트ID가 없는 경우 주소 기반으로 임시 생성
     if '사이트ID' not in map_data.columns or map_data['사이트ID'].isna().all():
         map_data['사이트ID'] = [f'SITE_{i:04d}' for i in range(len(map_data))]
     
-    # ?? 핵심: 사이트ID로 그룹화 (같은 사이트의 여러 충전기를 1개 마커로)
+    # ✅ 수정: grouped aggregation을 안전하게 처리
     grouped = map_data.groupby('사이트ID').agg({
         '위도': 'first',
         '경도': 'first',
         '주소': 'first',
         '권역': 'first',
-        '모델분류': lambda x: list(x),  # 모든 모델을 리스트로 수집
+        '모델분류': list,
         '운영계약시작일': 'first',
         '운영계약종료일': 'first'
     }).reset_index()
     
-    # 각 사이트의 충전기 개수 및 급속/완속 비율 계산
-    charger_counts = map_data.groupby('사이트ID').agg({
-        '모델분류': ['count', lambda x: sum('급속' in str(model) for model in x)]
-    }).reset_index()
+    # ✅ 수정: 충전기 수 계산을 별도로 안전하게 수행
+    site_total = map_data.groupby('사이트ID').size().reset_index(name='총충전기수')
     
-    charger_counts.columns = ['사이트ID', '총충전기수', '급속충전기수']
-    charger_counts['완속충전기수'] = charger_counts['총충전기수'] - charger_counts['급속충전기수']
+    # 급속 충전기 수 계산
+    fast_mask = map_data['모델분류'].str.contains('급속', na=False)
+    fast_counts = map_data[fast_mask].groupby('사이트ID').size().reset_index(name='급속충전기수')
     
-    # 데이터 병합
-    grouped = grouped.merge(charger_counts, on='사이트ID')
+    # 병합
+    grouped = grouped.merge(site_total, on='사이트ID', how='left')
+    grouped = grouped.merge(fast_counts, on='사이트ID', how='left')
+    grouped['급속충전기수'] = grouped['급속충전기수'].fillna(0).astype(int)
+    grouped['완속충전기수'] = grouped['총충전기수'] - grouped['급속충전기수']
     
-    # 지도 중심점 계산
     center_lat = grouped['위도'].mean()
     center_lon = grouped['경도'].mean()
     
-    # Folium 지도 생성
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=8,
         tiles='OpenStreetMap'
     )
     
-    # 마커 클러스터링 추가
     marker_cluster = MarkerCluster(
         name="충전소 클러스터",
         overlay=True,
@@ -353,41 +318,35 @@ def create_charger_map(filtered_df):
         }
     ).add_to(m)
     
-    # 권역별 색상 매핑
     region_colors = {
         '수도권북서': 'blue', '수도권북동': 'green', '수도권남동': 'red', '수도권남서': 'purple',
-        '수도권기타': 'cadetblue', '인천??': 'orange', '강원권': 'lightblue', '충청권': 'lightgreen',
+        '수도권기타': 'cadetblue', '인천기타': 'orange', '강원권': 'lightblue', '충청권': 'lightgreen',
         '경상권': 'pink', '전라권': 'lightgray', '기타': 'gray'
     }
     
-    # 각 사이트별 마커 추가
     for idx, row in grouped.iterrows():
         site_id = row['사이트ID']
-        address = row['주소']
+        address = row['주소'] if row['주소'] else ''
         total_chargers = row['총충전기수']
         fast_chargers = row['급속충전기수']
         slow_chargers = row['완속충전기수']
         models = row['모델분류']
-        region = row['권역']
+        region = row['권역'] if row['권역'] else '기타'
         
-        # ?? 네이버 지도 URL 생성 (주소 + " 전기차")
         encoded_address = quote(f"{address} 전기차")
         naver_map_url = f"https://map.naver.com/p/search/{encoded_address}"
         
-        # 아이콘 설정 (급속 충전기가 있으면 번개, 없으면 플러그)
         icon_name = 'flash' if fast_chargers > 0 else 'plug'
         color = region_colors.get(region, 'gray')
         
-        # ?? 마우스 오버 툴팁 (간단한 정보)
         tooltip_text = f"{site_id} | {total_chargers}기 | {region}"
         
-        # ?? 클릭 시 팝업 (상세 정보 + 네이버 지도 링크)
-        models_text = ', '.join(set([str(m) for m in models]))  # 중복 제거
+        models_text = ', '.join(set([str(m_item) for m_item in models]))
         
         popup_html = f"""
         <div style="width: 320px; font-family: 'Malgun Gothic', Arial, sans-serif;">
             <h4 style="margin: 0 0 12px 0; color: #333; border-bottom: 3px solid {color}; padding-bottom: 8px; font-size: 16px;">
-                ?? {site_id}
+                {site_id}
             </h4>
             <table style="width: 100%; font-size: 13px; border-collapse: collapse; margin-bottom: 12px;">
                 <tr style="background-color: #f8f9fa;">
@@ -396,7 +355,7 @@ def create_charger_map(filtered_df):
                 </tr>
                 <tr>
                     <td style="padding: 6px; font-weight: bold;">급속/완속</td>
-                    <td style="padding: 6px;">? {fast_chargers}대 / ?? {slow_chargers}대</td>
+                    <td style="padding: 6px;">{fast_chargers}대 / {slow_chargers}대</td>
                 </tr>
                 <tr style="background-color: #f8f9fa;">
                     <td style="padding: 6px; font-weight: bold;">권역</td>
@@ -422,15 +381,13 @@ def create_charger_map(filtered_df):
                     font-weight: bold;
                     font-size: 13px;
                     box-shadow: 0 3px 8px rgba(3, 199, 90, 0.3);
-                    transition: all 0.2s ease;
                 ">
-                    ?? 네이버 지도에서 보기 ↗
+                    네이버 지도에서 보기
                 </a>
             </div>
         </div>
         """
         
-        # 마커 추가
         folium.Marker(
             location=[row['위도'], row['경도']],
             popup=folium.Popup(popup_html, max_width=350),
@@ -442,12 +399,11 @@ def create_charger_map(filtered_df):
             )
         ).add_to(marker_cluster)
     
-    # ?? 범례 추가
     legend_html = f'''
     <div style="position: fixed; bottom: 50px; right: 50px; border: 2px solid grey; 
                 z-index: 9999; background-color: white; padding: 15px; font-size: 12px;
                 border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-family: Arial;">
-        <p style="margin: 0 0 10px 0; font-weight: bold; font-size: 14px; color: #333;">??? 지도 범례</p>
+        <p style="margin: 0 0 10px 0; font-weight: bold; font-size: 14px; color: #333;">지도 범례</p>
         <p style="margin: 5px 0;"><i class="fa fa-flash" style="color: red;"></i> 급속 충전기 포함 사이트</p>
         <p style="margin: 5px 0;"><i class="fa fa-plug" style="color: blue;"></i> 완속 충전기만 있는 사이트</p>
         <hr style="margin: 8px 0;">
@@ -457,7 +413,6 @@ def create_charger_map(filtered_df):
         <p style="margin: 2px 0; font-size: 11px; color: #666;">권역별 색상:</p>
     '''
     
-    # 권역별 색상 정보 추가
     for region, color in region_colors.items():
         if region in grouped['권역'].values:
             site_count = len(grouped[grouped['권역'] == region])
@@ -469,36 +424,31 @@ def create_charger_map(filtered_df):
     return m, None
 
 def process_excel_file_with_progress(file_bytes, title_container, progress_bar, status_text):
-    """실시간 타이머와 함께 엑셀 파일을 처리하고 대시보드용 DataFrame 생성"""
     try:
         start_time = time.time()
         
-        # 1단계: 파일 로드
         elapsed = time.time() - start_time
-        title_container.markdown(f"### ?? 작업 진행 상황 `?? {format_time(elapsed)}`")
-        status_text.markdown("?? **엑셀 파일을 읽는 중입니다...**")
+        title_container.markdown(f"### 작업 진행 상황 `{format_time(elapsed)}`")
+        status_text.markdown("**엑셀 파일을 읽는 중입니다...**")
         progress_bar.progress(5)
         
         file_stream = io.BytesIO(file_bytes)
         wb = openpyxl.load_workbook(file_stream, data_only=True)
         ws = wb.active
         
-        # 열 번호 정의
-        AR_COLUMN = 44  # 운영계약 시작일
-        AS_COLUMN = 45  # 운영계약 종료일
-        AM_COLUMN = 39  # 경도
-        AN_COLUMN = 40  # 위도
-        BA_COLUMN = 53  # 모델분류
-        BB_COLUMN = 54  # 권역
+        AR_COLUMN = 44
+        AS_COLUMN = 45
+        AM_COLUMN = 39
+        AN_COLUMN = 40
+        BA_COLUMN = 53
+        BB_COLUMN = 54
         
-        # 헤더 추가
         ws.cell(row=4, column=BA_COLUMN, value='모델분류')
         ws.cell(row=4, column=BB_COLUMN, value='권역')
         
-        # 2단계: 데이터 분석
         elapsed = time.time() - start_time
-        title_container.markdown(f"### ?? 작업 진행 상황 `?? {format_time(elapsed)}`")
-        status_text.markdown("?? **데이터 구조를 분석하는 중입니다...**")
+        title_container.markdown(f"### 작업 진행 상황 `{format_time(elapsed)}`")
+        status_text.markdown("**데이터 구조를 분석하는 중입니다...**")
         progress_bar.progress(15)
         
         max_row = ws.max_row
@@ -512,8 +462,7 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
         ar_cleaned_count = 0
         as_cleaned_count = 0
         
-        # 3단계: 분류 및 날짜 정리 작업
-        status_text.markdown(f"? **모델분류, 권역분류 및 날짜 정리 작업을 시작합니다... (총 {total_rows:,}개 행)**")
+        status_text.markdown(f"**모델분류, 권역분류 및 날짜 정리 작업을 시작합니다... (총 {total_rows:,}개 행)**")
         progress_bar.progress(20)
         
         processed_count = 0
@@ -527,16 +476,13 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
                 cell_value = ws.cell(row=row_num, column=col_num).value
                 row_data[col_letter] = cell_value
             
-            # BA열: 모델 분류
             classification_result = classify_model(row_data, row_num)
             ws.cell(row=row_num, column=BA_COLUMN, value=classification_result)
             
-            # BB열: 권역 분류
             address = get_safe_value(row_data, 'H')
             region_result = classify_region(address)
             ws.cell(row=row_num, column=BB_COLUMN, value=region_result)
             
-            # AR열 날짜 정리
             ar_value = row_data.get('AR')
             ar_cleaned = clean_and_parse_date(ar_value)
             if ar_cleaned:
@@ -545,7 +491,6 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
                 ws.cell(row=row_num, column=AR_COLUMN).number_format = 'YYYY-MM-DD'
                 ar_cleaned_count += 1
             
-            # AS열 날짜 정리
             as_value = row_data.get('AS')
             as_cleaned = clean_and_parse_date(as_value)
             if as_cleaned:
@@ -554,20 +499,18 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
                 ws.cell(row=row_num, column=AS_COLUMN).number_format = 'YYYY-MM-DD'
                 as_cleaned_count += 1
             
-            # ?? 좌표 데이터 수집 (AM열=경도, AN열=위도)
-            site_id = get_safe_value(row_data, 'A')  # A열을 사이트ID로 가정
-            longitude = row_data.get('AM')  # 경도
-            latitude = row_data.get('AN')   # 위도
+            site_id = get_safe_value(row_data, 'A')
+            longitude = row_data.get('AM')
+            latitude = row_data.get('AN')
             
-            # 숫자로 변환 시도
             try:
-                longitude = float(longitude) if longitude else None
-            except:
+                longitude = float(longitude) if longitude is not None else None
+            except (ValueError, TypeError):
                 longitude = None
             
             try:
-                latitude = float(latitude) if latitude else None
-            except:
+                latitude = float(latitude) if latitude is not None else None
+            except (ValueError, TypeError):
                 latitude = None
             
             dashboard_data.append({
@@ -596,28 +539,27 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
             if should_update:
                 elapsed_time = current_time - start_time
                 progress_percent = 20 + int((processed_count / total_rows) * 70)
-                progress_bar.progress(progress_percent)
+                progress_bar.progress(min(progress_percent, 95))
                 
-                title_container.markdown(f"### ?? 작업 진행 상황 `?? {format_time(elapsed_time)}`")
+                title_container.markdown(f"### 작업 진행 상황 `{format_time(elapsed_time)}`")
                 
-                if processed_count > 0:
+                if processed_count > 0 and elapsed_time > 0:
                     rows_per_second = processed_count / elapsed_time
                     remaining_rows = total_rows - processed_count
                     estimated_remaining = remaining_rows / rows_per_second if rows_per_second > 0 else 0
                     
                     status_text.markdown(
-                        f"? **분류 진행 중...** `{processed_count:,}/{total_rows:,}` 완료 "
+                        f"**분류 진행 중...** `{processed_count:,}/{total_rows:,}` 완료 "
                         f"({(processed_count/total_rows*100):.1f}%) | "
-                        f"?? **처리 속도:** `{rows_per_second:.1f}행/초` | "
-                        f"? **예상 남은 시간:** `{format_time(estimated_remaining)}`"
+                        f"**처리 속도:** `{rows_per_second:.1f}행/초` | "
+                        f"**예상 남은 시간:** `{format_time(estimated_remaining)}`"
                     )
                 
                 last_update_time = current_time
         
-        # 4단계: 파일 저장
         elapsed = time.time() - start_time
-        title_container.markdown(f"### ?? 작업 진행 상황 `?? {format_time(elapsed)}`")
-        status_text.markdown("?? **결과 파일을 생성하는 중입니다...**")
+        title_container.markdown(f"### 작업 진행 상황 `{format_time(elapsed)}`")
+        status_text.markdown("**결과 파일을 생성하는 중입니다...**")
         progress_bar.progress(95)
         
         output_stream = io.BytesIO()
@@ -631,13 +573,13 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
         total_time = time.time() - start_time
         progress_bar.progress(100)
         
-        title_container.markdown(f"### ?? 작업 완료! `? 총 {format_time(total_time)}`")
+        title_container.markdown(f"### 작업 완료! `총 {format_time(total_time)}`")
         
         avg_speed = processed_count / total_time if total_time > 0 else 0
         status_text.markdown(
-            f"?? **처리 완료!** `{processed_count:,}개 행`이 성공적으로 분류되었습니다. | "
+            f"**처리 완료!** `{processed_count:,}개 행`이 성공적으로 분류되었습니다. | "
             f"**평균 속도:** `{avg_speed:.1f}행/초` | "
-            f"?? **날짜 정리:** AR열 `{ar_cleaned_count:,}개`, AS열 `{as_cleaned_count:,}개`"
+            f"**날짜 정리:** AR열 `{ar_cleaned_count:,}개`, AS열 `{as_cleaned_count:,}개`"
         )
         
         return output_stream, None, processed_count, total_time, df, ar_cleaned_count, as_cleaned_count
@@ -645,26 +587,28 @@ def process_excel_file_with_progress(file_bytes, title_container, progress_bar, 
     except Exception as e:
         import traceback
         elapsed = time.time() - start_time
-        title_container.markdown(f"### ? 작업 중단 `?? {format_time(elapsed)}`")
-        status_text.markdown("? **오류가 발생했습니다.**")
+        title_container.markdown(f"### 작업 중단 `{format_time(elapsed)}`")
+        status_text.markdown("**오류가 발생했습니다.**")
         error_detail = traceback.format_exc()
         return None, f"파일 처리 중 오류 발생: {str(e)}\n\n상세:\n{error_detail}", 0, 0, None, 0, 0
 
 def show_dashboard(df):
     """대시보드 화면을 표시하는 함수"""
-    st.markdown("## ?? 충전기 운영 현황 대시보드")
+    st.markdown("## 충전기 운영 현황 대시보드")
     
-    # 날짜 필터 섹션
-    st.markdown("### ??? 운영계약 기간 필터")
+    st.markdown("### 운영계약 기간 필터")
     
-    valid_dates = df.dropna(subset=['운영계약시작일_parsed', '운영계약종료일_parsed'])
+    # ✅ 수정: 날짜 파싱을 안전하게 처리
+    df_dates = df.copy()
+    df_dates['운영계약시작일_parsed'] = pd.to_datetime(df_dates['운영계약시작일_parsed'], errors='coerce')
+    df_dates['운영계약종료일_parsed'] = pd.to_datetime(df_dates['운영계약종료일_parsed'], errors='coerce')
+    
+    valid_dates = df_dates.dropna(subset=['운영계약시작일_parsed', '운영계약종료일_parsed'])
     
     if len(valid_dates) > 0:
-        # pd.to_datetime을 통해 안전하게 변환 후 순수 date 객체로 뽑아냅니다.
-        min_date = pd.to_datetime(valid_dates['운영계약시작일_parsed']).min().date()
-        max_date = pd.to_datetime(valid_dates['운영계약종료일_parsed']).max().date()
+        min_date = valid_dates['운영계약시작일_parsed'].min().date()
+        max_date = valid_dates['운영계약종료일_parsed'].max().date()
         
-        # 안전한 기본값 계산
         default_start = max(min_date, date(2022, 1, 1))
         default_end = min(max_date, date(2028, 1, 1))
         
@@ -694,36 +638,40 @@ def show_dashboard(df):
         
         with col3:
             st.markdown("<br>", unsafe_allow_html=True)
-            filter_applied = st.button("?? 필터 적용", type="primary", use_container_width=True)
+            filter_applied = st.button("필터 적용", type="primary", use_container_width=True)
+        
+        # ✅ 수정: pandas Timestamp로 비교하여 타입 불일치 방지
+        start_ts = pd.Timestamp(start_date)
+        end_ts = pd.Timestamp(end_date)
         
         mask = (
-            (df['운영계약시작일_parsed'] < end_date) & 
-            (df['운영계약종료일_parsed'] >= start_date) &
-            df['운영계약시작일_parsed'].notna() &
-            df['운영계약종료일_parsed'].notna()
+            (df_dates['운영계약시작일_parsed'] < end_ts) & 
+            (df_dates['운영계약종료일_parsed'] >= start_ts) &
+            df_dates['운영계약시작일_parsed'].notna() &
+            df_dates['운영계약종료일_parsed'].notna()
         )
         
+        # ✅ 수정: 원본 df에서 필터링 (df_dates는 날짜 비교용)
         filtered_df = df[mask].copy()
         
         st.info(
-            f"?? **선택 기간:** {start_date} ~ {end_date} | "
+            f"**선택 기간:** {start_date} ~ {end_date} | "
             f"**해당 기간 충전기:** {len(filtered_df):,}대 (전체 {len(df):,}대 중 {len(filtered_df)/len(df)*100:.1f}%)"
         )
         
         if len(filtered_df) == 0:
-            st.warning("?? 선택한 기간에 해당하는 데이터가 없습니다. 필터 조건을 조정해주세요.")
+            st.warning("선택한 기간에 해당하는 데이터가 없습니다. 필터 조건을 조정해주세요.")
             return
         
         st.markdown("---")
         
-        # 1행: 주요 지표 (?? 여기서 모든 변수를 미리 계산)
-        st.markdown("### ?? 주요 지표")
+        # 1행: 주요 지표
+        st.markdown("### 주요 지표")
         
-        # ? 핵심 수정: 모든 변수를 여기서 미리 계산
         total_chargers = len(filtered_df)
         unique_sites = filtered_df['사이트ID'].nunique() if '사이트ID' in filtered_df.columns else 0
         region_count = filtered_df['권역'].nunique()
-        model_count = filtered_df['모델분류'].nunique()  # ?? 오류 해결: 여기서 계산
+        model_count = filtered_df['모델분류'].nunique()
         fast_chargers = len(filtered_df[filtered_df['모델분류'].str.contains('급속', na=False)])
         fast_ratio = (fast_chargers / total_chargers * 100) if total_chargers > 0 else 0
         
@@ -731,22 +679,18 @@ def show_dashboard(df):
         
         with kpi_col1:
             st.metric("총 충전기 수", f"{total_chargers:,}대")
-        
         with kpi_col2:
             st.metric("사이트 수", f"{unique_sites:,}개")
-        
         with kpi_col3:
             st.metric("권역 수", f"{region_count}개")
-        
         with kpi_col4:
             st.metric("급속 충전기", f"{fast_chargers:,}대", f"{fast_ratio:.1f}%")
         
         st.markdown("---")
         
-        # ??? 지도 시각화 (최상단 배치)
-        st.markdown("### ??? 충전기 위치 지도 (사이트ID 기준)")
+        # 지도 시각화
+        st.markdown("### 충전기 위치 지도 (사이트ID 기준)")
         
-        # 좌표 데이터 확인
         has_coordinates = '위도' in filtered_df.columns and '경도' in filtered_df.columns
         
         if has_coordinates:
@@ -754,20 +698,17 @@ def show_dashboard(df):
             coord_count = len(valid_coords)
             
             if coord_count > 0:
-                # 사이트 수 계산
                 unique_sites_map = valid_coords['사이트ID'].nunique() if '사이트ID' in valid_coords.columns else coord_count
                 
-                st.success(f"? {unique_sites_map:,}개 사이트, {coord_count:,}개 충전기의 좌표 데이터가 있습니다.")
+                st.success(f"{unique_sites_map:,}개 사이트, {coord_count:,}개 충전기의 좌표 데이터가 있습니다.")
                 
-                # 지도 생성
                 charger_map, error = create_charger_map(filtered_df)
                 
                 if error:
-                    st.error(f"? {error}")
+                    st.error(f"{error}")
                 else:
                     st_folium(charger_map, width=1400, height=700)
                     
-                    # 지도 통계
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         st.metric("지도 표시 사이트", f"{unique_sites_map:,}개")
@@ -780,8 +721,7 @@ def show_dashboard(df):
                         missing_coords = len(filtered_df) - coord_count
                         st.metric("좌표 누락", f"{missing_coords:,}대")
                     
-                    # 사용법 안내
-                    with st.expander("?? 지도 사용 방법"):
+                    with st.expander("지도 사용 방법"):
                         st.markdown("""
                         **지도 조작:**
                         - **확대/축소:** 마우스 휠 또는 +/- 버튼
@@ -789,25 +729,25 @@ def show_dashboard(df):
                         - **클러스터:** 숫자 표시된 원 클릭 시 해당 영역 확대
                         
                         **마커 기능:**
-                        - ??? **마우스 오버:** 사이트ID, 충전기 수, 권역 간단 정보
-                        - ??? **클릭:** 상세 정보 팝업 + 네이버 지도 링크
-                        - ?? **네이버 지도 버튼:** 클릭 시 새 창에서 해당 위치의 전기차 충전소 검색
+                        - **마우스 오버:** 사이트ID, 충전기 수, 권역 간단 정보
+                        - **클릭:** 상세 정보 팝업 + 네이버 지도 링크
+                        - **네이버 지도 버튼:** 클릭 시 새 창에서 해당 위치의 전기차 충전소 검색
                         
                         **시각화 정보:**
-                        - ? **빨간 번개:** 급속 충전기 포함 사이트
-                        - ?? **파란 플러그:** 완속 충전기만 있는 사이트
-                        - ?? **색상:** 권역별 구분 (범례 참조)
-                        - ?? **그룹화:** 같은 사이트ID는 1개 마커로 표시
+                        - 번개 아이콘: 급속 충전기 포함 사이트
+                        - 플러그 아이콘: 완속 충전기만 있는 사이트
+                        - 색상: 권역별 구분 (범례 참조)
+                        - 그룹화: 같은 사이트ID는 1개 마커로 표시
                         """)
             else:
-                st.warning("?? 좌표 데이터가 없습니다. AM열(경도), AN열(위도)를 확인해주세요.")
+                st.warning("좌표 데이터가 없습니다. AM열(경도), AN열(위도)를 확인해주세요.")
         else:
-            st.warning("?? 좌표 데이터가 없습니다. AM열(경도), AN열(위도)를 엑셀 파일에 추가해주세요.")
+            st.warning("좌표 데이터가 없습니다. AM열(경도), AN열(위도)를 엑셀 파일에 추가해주세요.")
         
         st.markdown("---")
         
         # 2행: 모델별 현황
-        st.markdown("### ? 모델별 충전기 현황")
+        st.markdown("### 모델별 충전기 현황")
         
         col1, col2 = st.columns([3, 2])
         
@@ -831,7 +771,7 @@ def show_dashboard(df):
             st.plotly_chart(fig_model, use_container_width=True)
         
         with col2:
-            st.markdown("#### ?? 모델별 수량 상세")
+            st.markdown("#### 모델별 수량 상세")
             model_counts['비율'] = (model_counts['수량'] / model_counts['수량'].sum() * 100).round(1)
             model_counts['비율'] = model_counts['비율'].astype(str) + '%'
             
@@ -845,7 +785,7 @@ def show_dashboard(df):
         st.markdown("---")
         
         # 3행: 권역별 현황
-        st.markdown("### ??? 권역별 충전기 현황")
+        st.markdown("### 권역별 충전기 현황")
         
         col1, col2 = st.columns([2, 3])
         
@@ -881,30 +821,36 @@ def show_dashboard(df):
         
         st.markdown("---")
         
-        # 4행: 권역별 모델 분포 히트맵
-        st.markdown("### ?? 권역별 모델 분포 히트맵")
+        # 4행: 히트맵
+        st.markdown("### 권역별 모델 분포 히트맵")
         
         crosstab = pd.crosstab(filtered_df['권역'], filtered_df['모델분류'])
         top_models = filtered_df['모델분류'].value_counts().head(12).index
-        crosstab_filtered = crosstab[top_models]
+        # ✅ 수정: top_models 중 crosstab에 존재하는 것만 선택
+        available_models = [m for m in top_models if m in crosstab.columns]
         
-        fig_heatmap = px.imshow(
-            crosstab_filtered.T,
-            labels=dict(x="권역", y="모델분류", color="수량"),
-            x=crosstab_filtered.index,
-            y=crosstab_filtered.columns,
-            color_continuous_scale='RdYlGn',
-            aspect="auto",
-            title='권역별 주요 모델 분포 (상위 12개 모델)',
-            text_auto=True
-        )
-        fig_heatmap.update_layout(height=500)
-        st.plotly_chart(fig_heatmap, use_container_width=True)
+        if available_models:
+            crosstab_filtered = crosstab[available_models]
+            
+            fig_heatmap = px.imshow(
+                crosstab_filtered.T,
+                labels=dict(x="권역", y="모델분류", color="수량"),
+                x=crosstab_filtered.index.tolist(),
+                y=crosstab_filtered.columns.tolist(),
+                color_continuous_scale='RdYlGn',
+                aspect="auto",
+                title='권역별 주요 모델 분포 (상위 12개 모델)',
+                text_auto=True
+            )
+            fig_heatmap.update_layout(height=500)
+            st.plotly_chart(fig_heatmap, use_container_width=True)
+        else:
+            st.info("히트맵을 생성할 데이터가 부족합니다.")
         
         st.markdown("---")
         
         # 5행: 상세 데이터 테이블
-        st.markdown("### ?? 권역별 × 모델별 상세 현황")
+        st.markdown("### 권역별 × 모델별 상세 현황")
         
         pivot_wide = pd.crosstab(filtered_df['권역'], filtered_df['모델분류'], margins=True)
         
@@ -916,14 +862,14 @@ def show_dashboard(df):
         
         # 다운로드 섹션
         st.markdown("---")
-        st.markdown("### ?? 데이터 다운로드")
+        st.markdown("### 데이터 다운로드")
         
         col1, col2, col3 = st.columns(3)
         
         with col1:
             csv_pivot = pivot_wide.to_csv(encoding='utf-8-sig')
             st.download_button(
-                label="?? 권역×모델 현황표 CSV",
+                label="권역×모델 현황표 CSV",
                 data=csv_pivot,
                 file_name=f"권역모델현황_{start_date}_{end_date}.csv",
                 mime="text/csv",
@@ -933,7 +879,7 @@ def show_dashboard(df):
         with col2:
             csv_filtered = filtered_df.to_csv(index=False, encoding='utf-8-sig')
             st.download_button(
-                label="?? 필터링된 전체 데이터 CSV",
+                label="필터링된 전체 데이터 CSV",
                 data=csv_filtered,
                 file_name=f"필터링데이터_{start_date}_{end_date}.csv",
                 mime="text/csv",
@@ -941,36 +887,41 @@ def show_dashboard(df):
             )
         
         with col3:
-            # ? 이제 model_count가 정의되어 있으므로 정상 작동
-            summary_report = f"""충전기 현황 요약 리포트
-
-?? 분석 기간: {start_date} ~ {end_date}
-?? 총 충전기 수: {total_chargers:,}대
-?? 총 사이트 수: {unique_sites:,}개
-?? 모델 종류: {model_count}개
-??? 권역 수: {region_count}개
-? 급속 충전기: {fast_chargers:,}대 ({fast_ratio:.1f}%)
-
-?? 상위 5개 모델:
-{chr(10).join([f"{i+1}. {row['모델분류']}: {row['수량']:,}대 ({row['비율']})" for i, row in model_counts.head(5).iterrows()])}
-
-??? 권역별 분포:
-{chr(10).join([f"? {row['권역']}: {row['수량']:,}대" for _, row in region_counts.iterrows()])}
-"""
+            summary_lines = [
+                f"충전기 현황 요약 리포트",
+                f"",
+                f"분석 기간: {start_date} ~ {end_date}",
+                f"총 충전기 수: {total_chargers:,}대",
+                f"총 사이트 수: {unique_sites:,}개",
+                f"모델 종류: {model_count}개",
+                f"권역 수: {region_count}개",
+                f"급속 충전기: {fast_chargers:,}대 ({fast_ratio:.1f}%)",
+                f"",
+                f"상위 5개 모델:",
+            ]
+            for i, row in model_counts.head(5).iterrows():
+                summary_lines.append(f"  {i+1}. {row['모델분류']}: {row['수량']:,}대 ({row['비율']})")
+            
+            summary_lines.append("")
+            summary_lines.append("권역별 분포:")
+            for _, row in region_counts.iterrows():
+                summary_lines.append(f"  - {row['권역']}: {row['수량']:,}대")
+            
+            summary_report = "\n".join(summary_lines)
             
             st.download_button(
-                label="?? 요약 리포트 TXT",
+                label="요약 리포트 TXT",
                 data=summary_report,
                 file_name=f"요약리포트_{start_date}_{end_date}.txt",
                 mime="text/plain",
                 use_container_width=True
             )
         
-        # 데이터 품질 체크 섹션
+        # 데이터 품질 체크
         st.markdown("---")
-        st.markdown("### ?? 데이터 품질 체크")
+        st.markdown("### 데이터 품질 체크")
         
-        problematic_regions = ['수도권??', '인천??', '기타', '수도권기타']
+        problematic_regions = ['수도권기타', '인천기타', '기타']
         unknown_regions = filtered_df[
             filtered_df['권역'].isin(problematic_regions)
         ]
@@ -987,16 +938,17 @@ def show_dashboard(df):
             st.metric("미분류/불명확", f"{len(unknown_regions):,}대", f"{unknown_ratio:.1f}%")
         
         if len(unknown_regions) > 0:
-            st.warning(f"?? {len(unknown_regions):,}개의 주소가 미분류되었거나 불명확합니다.")
+            st.warning(f"{len(unknown_regions):,}개의 주소가 미분류되었거나 불명확합니다.")
             
-            with st.expander("?? 미분류 주소 상세 보기", expanded=False):
+            with st.expander("미분류 주소 상세 보기", expanded=False):
+                # ✅ 수정: value_counts 결과 컬럼명을 명시적으로 처리
                 unknown_stats = unknown_regions['권역'].value_counts()
+                stats_df = pd.DataFrame({
+                    '권역': unknown_stats.index,
+                    '수량': unknown_stats.values
+                })
                 st.markdown("**권역별 미분류 통계:**")
-                st.dataframe(
-                    unknown_stats.reset_index().rename(columns={'권역': '권역', 'count': '수량'}),
-                    use_container_width=True,
-                    hide_index=True
-                )
+                st.dataframe(stats_df, use_container_width=True, hide_index=True)
                 
                 st.markdown("**상세 주소 목록 (최대 10개):**")
                 display_cols = ['주소', '권역', '모델분류', '사이트ID']
@@ -1009,38 +961,34 @@ def show_dashboard(df):
                 )
                 
                 if len(unknown_regions) > 10:
-                    st.info(f"?? 총 {len(unknown_regions):,}개 중 10개만 표시됩니다.")
+                    st.info(f"총 {len(unknown_regions):,}개 중 10개만 표시됩니다.")
         else:
-            st.success("? 모든 주소가 정확하게 분류되었습니다!")
+            st.success("모든 주소가 정확하게 분류되었습니다!")
     
     else:
-        st.warning("?? 유효한 운영계약 날짜 데이터가 없습니다. AR열과 AS열을 확인해주세요.")
+        st.warning("유효한 운영계약 날짜 데이터가 없습니다. AR열과 AS열을 확인해주세요.")
 
 def main():
-    # 세션 상태 초기화 시 샘플 데이터 자동 로드
     if 'processed_df' not in st.session_state:
         st.session_state.processed_df = create_sample_data()
         st.session_state.is_sample_data = True
     if 'processed_file' not in st.session_state:
         st.session_state.processed_file = None
     
-    # 헤더
-    st.title("? 충전기 모델분류 & 운영현황 대시보드")
+    st.title("⚡ 충전기 모델분류 & 운영현황 대시보드")
     st.markdown("""
     엑셀 파일을 업로드하면 **BA열**에 "모델분류", **BB열**에 "권역"을 자동으로 추가하고,  
     **AR열/AS열**의 날짜 데이터를 정리하여 **AM열(경도)/AN열(위도)** 기반으로 지도에서 충전기 위치를 확인할 수 있습니다.
     """)
     
-    # 탭 구성
-    tab1, tab2 = st.tabs(["?? 파일 업로드 & 분류", "?? 운영현황 대시보드"])
+    tab1, tab2 = st.tabs(["파일 업로드 & 분류", "운영현황 대시보드"])
     
     with tab1:
-        # 샘플 데이터 안내
         if st.session_state.get('is_sample_data', False):
-            st.info("?? **현재 샘플 데이터가 로드되어 있습니다.** '운영현황 대시보드' 탭에서 바로 지도 기능을 체험해보세요!")
+            st.info("**현재 샘플 데이터가 로드되어 있습니다.** '운영현황 대시보드' 탭에서 바로 지도 기능을 체험해보세요!")
         
         uploaded_file = st.file_uploader(
-            "?? 엑셀 파일을 선택하세요",
+            "엑셀 파일을 선택하세요",
             type=['xlsx', 'xls'],
             help="AM열(경도), AN열(위도), 사이트ID가 포함된 파일을 권장합니다. 최대 200MB"
         )
@@ -1048,7 +996,7 @@ def main():
         if uploaded_file is not None:
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.info(f"?? **{uploaded_file.name}**")
+                st.info(f"**{uploaded_file.name}**")
             with col2:
                 file_size_mb = uploaded_file.size / (1024 * 1024)
                 if file_size_mb >= 1:
@@ -1056,10 +1004,10 @@ def main():
                 else:
                     st.metric("파일 크기", f"{uploaded_file.size / 1024:.1f} KB")
             
-            if st.button("?? 모델분류 시작", type="primary", use_container_width=True):
+            if st.button("모델분류 시작", type="primary", use_container_width=True):
                 
                 title_container = st.empty()
-                title_container.markdown("### ?? 작업 진행 상황 `?? 0.0초`")
+                title_container.markdown("### 작업 진행 상황 `0.0초`")
                 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -1074,27 +1022,25 @@ def main():
                     status_text
                 )
                 
-                processed_file, error, processed_count, total_time, df, ar_cleaned, as_cleaned = result
+                processed_file, error, processed_count, total_time, result_df, ar_cleaned, as_cleaned = result
                 
                 if error:
-                    st.error(f"? {error}")
+                    st.error(f"{error}")
                 else:
-                    # 샘플 데이터 플래그 제거
-                    st.session_state.processed_df = df
+                    st.session_state.processed_df = result_df
                     st.session_state.processed_file = processed_file
                     st.session_state.is_sample_data = False
                     
                     st.success(
-                        f"?? **축하합니다!** 총 **{processed_count:,}개 행**의 모델분류 및 권역분류가 "
+                        f"총 **{processed_count:,}개 행**의 모델분류 및 권역분류가 "
                         f"**{format_time(total_time)}**만에 완료되었습니다!"
                     )
                     
                     st.info(
-                        f"?? **날짜 정리 완료:** AR열(운영계약시작일) `{ar_cleaned:,}개`, "
+                        f"**날짜 정리 완료:** AR열(운영계약시작일) `{ar_cleaned:,}개`, "
                         f"AS열(운영계약종료일) `{as_cleaned:,}개` - 시간 부분(00:00:00) 제거 및 YYYY-MM-DD 형식으로 변환"
                     )
                     
-                    # 한국 시간 적용
                     korea_time = get_korea_time()
                     timestamp = korea_time.strftime("%Y%m%d_%H%M%S")
                     download_name = f"모델분류_결과_{timestamp}.xlsx"
@@ -1102,7 +1048,7 @@ def main():
                     col1, col2, col3 = st.columns([1, 2, 1])
                     with col2:
                         st.download_button(
-                            label="?? 결과 파일 다운로드",
+                            label="결과 파일 다운로드",
                             data=processed_file.getvalue(),
                             file_name=download_name,
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1110,9 +1056,9 @@ def main():
                             type="primary"
                         )
                     
-                    st.info("?? **'운영현황 대시보드'** 탭으로 이동하여 지도와 데이터를 분석해보세요!")
+                    st.info("**'운영현황 대시보드'** 탭으로 이동하여 지도와 데이터를 분석해보세요!")
                     
-                    with st.expander("?? 처리 결과 상세 정보", expanded=False):
+                    with st.expander("처리 결과 상세 정보", expanded=False):
                         col1, col2, col3, col4, col5 = st.columns(5)
                         with col1:
                             st.metric("처리된 행 수", f"{processed_count:,}개")
@@ -1126,27 +1072,25 @@ def main():
                         with col5:
                             st.metric("AS열 정리", f"{as_cleaned:,}개")
         
-        with st.expander("?? 분류 기준 정보 보기", expanded=False):
+        with st.expander("분류 기준 정보 보기", expanded=False):
             show_classification_info()
     
     with tab2:
         if st.session_state.processed_df is not None:
-            # 샘플 데이터 사용 중인 경우 알림
             if st.session_state.get('is_sample_data', False):
-                st.warning("?? **현재 샘플 데이터를 사용 중입니다.** 실제 데이터를 분석하려면 '파일 업로드 & 분류' 탭에서 파일을 업로드하세요.")
+                st.warning("**현재 샘플 데이터를 사용 중입니다.** 실제 데이터를 분석하려면 '파일 업로드 & 분류' 탭에서 파일을 업로드하세요.")
             
             show_dashboard(st.session_state.processed_df)
         else:
-            st.info("?? 먼저 **'파일 업로드 & 분류'** 탭에서 파일을 업로드하고 분류 작업을 완료해주세요.")
+            st.info("먼저 **'파일 업로드 & 분류'** 탭에서 파일을 업로드하고 분류 작업을 완료해주세요.")
 
 def show_classification_info():
-    """분류 기준 정보를 표시하는 함수"""
-    st.markdown("### ?? 모델분류 기준표")
+    st.markdown("### 모델분류 기준표")
     
-    subtab1, subtab2, subtab3, subtab4 = st.tabs(["? 급속 충전기", "?? 완속 충전기", "??? 권역 분류", "?? 참조 정보"])
+    subtab1, subtab2, subtab3, subtab4 = st.tabs(["급속 충전기", "완속 충전기", "권역 분류", "참조 정보"])
     
     with subtab1:
-        st.markdown("#### ? 급속 충전기 분류 기준")
+        st.markdown("#### 급속 충전기 분류 기준")
         st.info("**전제 조건:** AH열 = '급속'")
         
         fast_charger_data = {
@@ -1172,7 +1116,7 @@ def show_classification_info():
         st.dataframe(fast_charger_data, use_container_width=True, hide_index=True)
     
     with subtab2:
-        st.markdown("#### ?? 완속 충전기 분류 기준")
+        st.markdown("#### 완속 충전기 분류 기준")
         st.info("**전제 조건:** AH열 ≠ '급속'")
         
         slow_charger_data = {
@@ -1189,7 +1133,7 @@ def show_classification_info():
         st.dataframe(slow_charger_data, use_container_width=True, hide_index=True)
     
     with subtab3:
-        st.markdown("#### ??? 권역 분류 기준 (H열 주소 기반)")
+        st.markdown("#### 권역 분류 기준 (H열 주소 기반)")
         
         region_data = {
             "권역명": ["수도권북서", "수도권북동", "수도권남동", "수도권남서", 
@@ -1212,31 +1156,31 @@ def show_classification_info():
         st.dataframe(region_data, use_container_width=True, hide_index=True)
     
     with subtab4:
-        st.markdown("#### ?? 엑셀 열 참조 정보")
+        st.markdown("#### 엑셀 열 참조 정보")
         
         col1, col2 = st.columns(2)
         
         with col1:
             st.markdown("""
-            **?? 분류에 사용되는 엑셀 열**
+            **분류에 사용되는 엑셀 열**
             
             | 열 이름 | 열 번호 | 용도 |
             |---------|---------|------|
-            | **E열** | 5번째 | 사이트ID (지도 그룹화) ?? |
+            | **E열** | 5번째 | 사이트ID (지도 그룹화) |
             | **H열** | 8번째 | 주소 (권역 분류) |
             | **AD열** | 30번째 | 모델명/설명 검색 |
             | **AG열** | 33번째 | 모델 코드 (주요 기준) |
             | **AH열** | 34번째 | 급속/완속 구분 |
             | **AJ열** | 36번째 | 용량 정보 (kW) |
-            | **AM열** | 39번째 | 경도 (Longitude) ??? |
-            | **AN열** | 40번째 | 위도 (Latitude) ??? |
-            | **AR열** | 44번째 | 운영계약 시작일 ?정리 |
-            | **AS열** | 45번째 | 운영계약 종료일 ?정리 |
+            | **AM열** | 39번째 | 경도 (Longitude) |
+            | **AN열** | 40번째 | 위도 (Latitude) |
+            | **AR열** | 44번째 | 운영계약 시작일 |
+            | **AS열** | 45번째 | 운영계약 종료일 |
             """)
         
         with col2:
             st.markdown("""
-            **?? 결과 출력 위치**
+            **결과 출력 위치**
             
             | 항목 | 위치 | 내용 |
             |------|------|------|
@@ -1249,7 +1193,7 @@ def show_classification_info():
             """)
         
         st.success("""
-        **??? 지도 기능:**
+        **지도 기능:**
         - **AM열(경도), AN열(위도)** 좌표로 정확한 위치 표시
         - **사이트ID(E열)** 기준으로 같은 위치 충전기 그룹화
         - **마우스 오버:** 사이트ID, 충전기 수, 권역 정보
