@@ -661,8 +661,8 @@ def show_dashboard(df):
     
     if len(valid_dates) > 0:
         # pd.to_datetime을 통해 안전하게 변환 후 순수 date 객체로 뽑아냅니다.
-min_date = pd.to_datetime(valid_dates['운영계약시작일_parsed']).min().date()
-max_date = pd.to_datetime(valid_dates['운영계약종료일_parsed']).max().date()
+        min_date = pd.to_datetime(valid_dates['운영계약시작일_parsed']).min().date()
+        max_date = pd.to_datetime(valid_dates['운영계약종료일_parsed']).max().date()
         
         # 안전한 기본값 계산
         default_start = max(min_date, date(2022, 1, 1))
